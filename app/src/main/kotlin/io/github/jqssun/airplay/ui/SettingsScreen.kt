@@ -22,6 +22,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(viewModel: MainViewModel) {
     val serverName by viewModel.serverName.collectAsState()
     val h265Enabled by viewModel.h265Enabled.collectAsState()
+    val enforceSdr by viewModel.enforceSdr.collectAsState()
     val alacEnabled by viewModel.alacEnabled.collectAsState()
     val aacEnabled by viewModel.aacEnabled.collectAsState()
     val resolution by viewModel.resolution.collectAsState()
@@ -192,6 +193,13 @@ fun SettingsScreen(viewModel: MainViewModel) {
             description = stringResource(R.string.setting_h265_desc),
             checked = h265Enabled,
             onCheckedChange = { viewModel.setH265Enabled(it) }
+        )
+
+        SettingSwitch(
+            title = stringResource(R.string.setting_enforce_sdr),
+            description = stringResource(R.string.setting_enforce_sdr_desc),
+            checked = enforceSdr,
+            onCheckedChange = { viewModel.setEnforceSdr(it) }
         )
 
         SettingSwitch(
