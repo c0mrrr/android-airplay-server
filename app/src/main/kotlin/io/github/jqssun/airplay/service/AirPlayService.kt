@@ -11,7 +11,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.os.Binder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
@@ -89,8 +91,14 @@ class AirPlayService : Service(), RaopCallbackHandler {
     private var mediaReceiver: BroadcastReceiver? = null
 
     var logCallback: ((String) -> Unit)? = null
-    var pinCallback: ((String?) -> Unit)? = null
     var modeCallback: ((Boolean) -> Unit)? = null
+
+    @Volatile private var _lastPin: String? = null
+    var pinCallback: ((String?) -> Unit)? = null
+        set(value) {
+            field = value
+            value?.invoke(_lastPin)
+        }
 
     private fun log(msg: String) {
         Log.i(TAG, msg)
@@ -186,8 +194,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
         val alac = prefs.getBoolean(Prefs.ALAC_ENABLED, Prefs.DEF_ALAC_ENABLED)
         val aac = prefs.getBoolean(Prefs.AAC_ENABLED, Prefs.DEF_AAC_ENABLED)
 
-        audioRenderer.swAlacEnabled =
-                prefs.getBoolean(Prefs.SW_ALAC_ENABLED, Prefs.DEF_SW_ALAC_ENABLED)
+        audioRenderer.swAlacEnabled = prefs.getBoolean(Prefs.SW_ALAC_ENABLED, Prefs.DEF_SW_ALAC_ENABLED)
         videoRenderer.enforceSdr = prefs.getBoolean(Prefs.ENFORCE_SDR, Prefs.DEF_ENFORCE_SDR)
         NativeBridge.nativeSetH265Enabled(nativeHandle, h265)
         NativeBridge.nativeSetCodecs(nativeHandle, alac, aac)
@@ -329,11 +336,21 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     override fun onConnectionInit() {
+        val firstConnection = _connectionCount.value == 0
         _connectionCount.value++
         log("Client connected (${_connectionCount.value})")
-        val launchIntent = Intent(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-        try { startActivity(launchIntent) } catch (e: Exception) { Log.w(TAG, "UI launch failed", e) }
+        if (!firstConnection) return
+        val prefs = getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(Prefs.LAUNCH_ON_CONNECT, Prefs.DEF_LAUNCH_ON_CONNECT)) return
+        Handler(Looper.getMainLooper()).post {
+            val launchIntent =
+                    Intent(this, MainActivity::class.java)
+                            .addFlags(
+                                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            )
+            startActivity(launchIntent)
+        }
     }
 
     override fun onConnectionDestroy() {
@@ -353,6 +370,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     override fun onDisplayPin(pin: String) {
+        _lastPin = pin
         pinCallback?.invoke(pin)
     }
 
@@ -460,6 +478,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     private fun clearPin() {
+        _lastPin = null
         pinCallback?.invoke(null)
     }
 
@@ -489,7 +508,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to get hardware address", e)
         }
-        // Fallback: random-ish address
+        // fallback: random-ish address
         return byteArrayOf(
                 0xAA.toByte(),
                 0xBB.toByte(),
