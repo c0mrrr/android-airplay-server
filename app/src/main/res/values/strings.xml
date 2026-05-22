@@ -51,7 +51,7 @@
     <string name="section_display">Display</string>
     <string name="section_audio">Audio</string>
     <string name="section_decode">Decode</string>
-    <string name="section_debug">Debug</string>
+    <string name="section_developer">Developer</string>
 
     <!-- Settings: Server -->
     <string name="setting_server_name">Server name</string>
@@ -110,7 +110,13 @@
     <string name="setting_aac">AAC audio</string>
     <string name="setting_aac_desc">AAC-ELD or AAC-LC codec for screen mirroring audio</string>
 
-    <!-- Settings: Debug -->
+    <!-- Settings: Developer -->
+    <string name="setting_developer_options">Developer options</string>
+    <string name="setting_developer_options_desc">Show experimental decoder and debugging controls.</string>
+    <string name="setting_key_allow_frame_drop">MediaFormat.KEY_ALLOW_FRAME_DROP</string>
+    <string name="setting_key_allow_frame_drop_desc">Allow video decoders to drop frames internally to keep up on Android 10+.</string>
+    <string name="setting_realtime_decoder_priority">MediaFormat.KEY_PRIORITY</string>
+    <string name="setting_realtime_decoder_priority_desc">Request real-time scheduling for the video decoder.</string>
     <string name="setting_debug_overlay">Show debug overlay</string>
     <string name="setting_debug_overlay_desc">Display stats (bitrate, FPS, codec) over video</string>
 </resources>

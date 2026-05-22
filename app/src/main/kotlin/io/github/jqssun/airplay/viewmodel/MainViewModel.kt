@@ -76,6 +76,24 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _enforceSdr = MutableStateFlow(prefs.getBoolean(Prefs.ENFORCE_SDR, Prefs.DEF_ENFORCE_SDR))
     val enforceSdr: StateFlow<Boolean> = _enforceSdr.asStateFlow()
 
+    private val _keyAllowFrameDrop =
+            MutableStateFlow(
+                    prefs.getBoolean(
+                            Prefs.KEY_ALLOW_FRAME_DROP,
+                            Prefs.DEF_KEY_ALLOW_FRAME_DROP
+                    )
+            )
+    val keyAllowFrameDrop: StateFlow<Boolean> = _keyAllowFrameDrop.asStateFlow()
+
+    private val _realtimeDecoderPriority =
+            MutableStateFlow(
+                    prefs.getBoolean(
+                            Prefs.KEY_PRIORITY,
+                            Prefs.DEF_KEY_PRIORITY
+                    )
+            )
+    val realtimeDecoderPriority: StateFlow<Boolean> = _realtimeDecoderPriority.asStateFlow()
+
     private val _alacEnabled = MutableStateFlow(prefs.getBoolean(Prefs.ALAC_ENABLED, Prefs.DEF_ALAC_ENABLED))
     val alacEnabled: StateFlow<Boolean> = _alacEnabled.asStateFlow()
 
@@ -118,6 +136,10 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     // Debug
     private val _debugEnabled = MutableStateFlow(prefs.getBoolean(Prefs.DEBUG_ENABLED, Prefs.DEF_DEBUG_ENABLED))
     val debugEnabled: StateFlow<Boolean> = _debugEnabled.asStateFlow()
+
+    private val _developerOptions =
+            MutableStateFlow(prefs.getBoolean(Prefs.DEVELOPER_OPTIONS, Prefs.DEF_DEVELOPER_OPTIONS))
+    val developerOptions: StateFlow<Boolean> = _developerOptions.asStateFlow()
 
     private val _debugInfo = MutableStateFlow(DebugInfo())
     val debugInfo: StateFlow<DebugInfo> = _debugInfo.asStateFlow()
@@ -183,6 +205,14 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     fun setBootAutoStart(v: Boolean) { _bootAutoStart.value = v; prefs.edit().putBoolean(Prefs.BOOT_AUTO_START, v).apply() }
     fun setH265Enabled(v: Boolean) { _h265Enabled.value = v; prefs.edit().putBoolean(Prefs.H265_ENABLED, v).apply() }
     fun setEnforceSdr(v: Boolean) { _enforceSdr.value = v; prefs.edit().putBoolean(Prefs.ENFORCE_SDR, v).apply() }
+    fun setKeyAllowFrameDrop(v: Boolean) {
+        _keyAllowFrameDrop.value = v
+        prefs.edit().putBoolean(Prefs.KEY_ALLOW_FRAME_DROP, v).apply()
+    }
+    fun setRealtimeDecoderPriority(v: Boolean) {
+        _realtimeDecoderPriority.value = v
+        prefs.edit().putBoolean(Prefs.KEY_PRIORITY, v).apply()
+    }
     fun setSwAlacEnabled(v: Boolean) { _swAlacEnabled.value = v; prefs.edit().putBoolean(Prefs.SW_ALAC_ENABLED, v).apply() }
     fun setAlacEnabled(v: Boolean) { _alacEnabled.value = v; prefs.edit().putBoolean(Prefs.ALAC_ENABLED, v).apply() }
     fun setAacEnabled(v: Boolean) { _aacEnabled.value = v; prefs.edit().putBoolean(Prefs.AAC_ENABLED, v).apply() }
@@ -197,6 +227,10 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     fun setAutoAudioMode(v: Boolean) { _autoAudioMode.value = v; prefs.edit().putBoolean(Prefs.AUTO_AUDIO_MODE, v).apply() }
     fun setLaunchOnConnect(v: Boolean) { _launchOnConnect.value = v; prefs.edit().putBoolean(Prefs.LAUNCH_ON_CONNECT, v).apply() }
     fun setDebugEnabled(v: Boolean) { _debugEnabled.value = v; prefs.edit().putBoolean(Prefs.DEBUG_ENABLED, v).apply() }
+    fun setDeveloperOptions(v: Boolean) {
+        _developerOptions.value = v
+        prefs.edit().putBoolean(Prefs.DEVELOPER_OPTIONS, v).apply()
+    }
 
     // Service binding
     fun bindService(svc: AirPlayService) {

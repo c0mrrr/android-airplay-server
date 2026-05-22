@@ -214,6 +214,12 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
         audioRenderer.swAlacEnabled = prefs.getBoolean(Prefs.SW_ALAC_ENABLED, Prefs.DEF_SW_ALAC_ENABLED)
         videoRenderer.enforceSdr = prefs.getBoolean(Prefs.ENFORCE_SDR, Prefs.DEF_ENFORCE_SDR)
+        videoRenderer.applyDeveloperMediaFormatKeys =
+                prefs.getBoolean(Prefs.DEVELOPER_OPTIONS, Prefs.DEF_DEVELOPER_OPTIONS)
+        videoRenderer.keyAllowFrameDrop =
+                prefs.getBoolean(Prefs.KEY_ALLOW_FRAME_DROP, Prefs.DEF_KEY_ALLOW_FRAME_DROP)
+        videoRenderer.realtimeDecoderPriority =
+                prefs.getBoolean(Prefs.KEY_PRIORITY, Prefs.DEF_KEY_PRIORITY)
         NativeBridge.nativeSetH265Enabled(nativeHandle, h265)
         NativeBridge.nativeSetCodecs(nativeHandle, alac, aac)
         NativeBridge.nativeSetPlist(nativeHandle, "maxFPS", maxFps)

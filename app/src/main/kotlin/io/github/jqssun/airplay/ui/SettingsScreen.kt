@@ -50,6 +50,9 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val audioLatencyMs by viewModel.audioLatencyMs.collectAsState()
     val swAlacEnabled by viewModel.swAlacEnabled.collectAsState()
     val debugEnabled by viewModel.debugEnabled.collectAsState()
+    val developerOptions by viewModel.developerOptions.collectAsState()
+    val keyAllowFrameDrop by viewModel.keyAllowFrameDrop.collectAsState()
+    val realtimeDecoderPriority by viewModel.realtimeDecoderPriority.collectAsState()
 
     Column(
         modifier = Modifier
@@ -275,14 +278,37 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onCheckedChange = { viewModel.setAacEnabled(it) }
         )
 
-        SectionHeader(stringResource(R.string.section_debug))
+        SectionHeader(stringResource(R.string.section_developer))
 
         SettingSwitch(
-            title = stringResource(R.string.setting_debug_overlay),
-            description = stringResource(R.string.setting_debug_overlay_desc),
-            checked = debugEnabled,
-            onCheckedChange = { viewModel.setDebugEnabled(it) }
+            title = stringResource(R.string.setting_developer_options),
+            description = stringResource(R.string.setting_developer_options_desc),
+            checked = developerOptions,
+            onCheckedChange = { viewModel.setDeveloperOptions(it) }
         )
+
+        if (developerOptions) {
+            SettingSwitch(
+                title = stringResource(R.string.setting_key_allow_frame_drop),
+                description = stringResource(R.string.setting_key_allow_frame_drop_desc),
+                checked = keyAllowFrameDrop,
+                onCheckedChange = { viewModel.setKeyAllowFrameDrop(it) }
+            )
+
+            SettingSwitch(
+                title = stringResource(R.string.setting_realtime_decoder_priority),
+                description = stringResource(R.string.setting_realtime_decoder_priority_desc),
+                checked = realtimeDecoderPriority,
+                onCheckedChange = { viewModel.setRealtimeDecoderPriority(it) }
+            )
+
+            SettingSwitch(
+                title = stringResource(R.string.setting_debug_overlay),
+                description = stringResource(R.string.setting_debug_overlay_desc),
+                checked = debugEnabled,
+                onCheckedChange = { viewModel.setDebugEnabled(it) }
+            )
+        }
     }
 }
 

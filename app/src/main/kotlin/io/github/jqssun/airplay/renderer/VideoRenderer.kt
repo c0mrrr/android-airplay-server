@@ -28,6 +28,9 @@ class VideoRenderer {
     @Volatile var codecName = ""; private set
 
     var enforceSdr = true
+    var applyDeveloperMediaFormatKeys = false
+    var keyAllowFrameDrop = true
+    var realtimeDecoderPriority = false
     private var _framesThisSec = 0
     private var _bytesThisSec = 0L
     private var _lastStatReset = 0L
@@ -128,6 +131,12 @@ class VideoRenderer {
             format.setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
             format.setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
             format.setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
+        }
+        if (applyDeveloperMediaFormatKeys && realtimeDecoderPriority) {
+            format.setInteger(MediaFormat.KEY_PRIORITY, 0)
+        }
+        if (applyDeveloperMediaFormatKeys && android.os.Build.VERSION.SDK_INT >= 29) {
+            format.setInteger(MediaFormat.KEY_ALLOW_FRAME_DROP, if (keyAllowFrameDrop) 1 else 0)
         }
 
         codec = MediaCodec.createDecoderByType(mime).also {
