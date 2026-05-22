@@ -16,12 +16,12 @@ class VideoRenderer {
     private var videoWidth = 0
     private var videoHeight = 0
 
-    // Cache last keyframe so decoder can bootstrap after late surface attach
+    // cache last keyframe so decoder can bootstrap after late surface attach
     private var cachedKeyframe: ByteArray? = null
     private var cachedKeyframePts: Long = 0
     private var cachedKeyframeH265 = false
 
-    // Stats
+    // stats
     @Volatile var fps = 0; private set
     @Volatile var bitrateBps = 0L; private set
     @Volatile var frameCount = 0L; private set
@@ -34,6 +34,8 @@ class VideoRenderer {
     var realtimeDecoderPriority = true
     var operatingRateHint = false
     var scheduledOutputBufferRelease = true
+    var benchmarkLog = false
+    var benchmarkLogCallback: ((String) -> Unit)? = null
     private var _framesThisSec = 0
     private var _bytesThisSec = 0L
     private var _lastStatReset = 0L
@@ -65,16 +67,26 @@ class VideoRenderer {
             _framesThisSec = 0
             _bytesThisSec = 0
             _lastStatReset = now
+            if (benchmarkLog) _emitBenchmarkLine()
         }
         _framesThisSec++
         _bytesThisSec += size
         frameCount++
     }
 
+    private fun _emitBenchmarkLine() {
+        val msg = "fps=$fps bitrate=${bitrateBps / 1000}kbps " +
+            "jitter=${framePacingJitterUs}us frames=$frameCount " +
+            "dropped=$droppedFrames codec=$codecName " +
+            "res=${videoWidth}x${videoHeight}"
+        Log.i(BENCH_TAG, msg)
+        benchmarkLogCallback?.invoke(msg)
+    }
+
     fun feedFrame(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         _updateStats(data.size)
 
-        // Always cache keyframes, even without a surface
+        // always cache keyframes, even without a surface
         if (_isKeyframe(data, isH265)) {
             cachedKeyframe = data.copyOf()
             cachedKeyframePts = ntpTimeNs
@@ -84,11 +96,11 @@ class VideoRenderer {
         synchronized(lock) {
             if (surface == null) return
 
-            // Codec switch needed?
+            // codec switch when needed
             if (codec == null || isH265 != currentH265) {
                 stopCodec()
                 startCodec(isH265)
-                // Feed cached keyframe to bootstrap decoder
+                // feed cached keyframe to bootstrap decoder
                 cachedKeyframe?.let { kf ->
                     if (cachedKeyframeH265 == isH265) {
                         _feedToCodec(kf, cachedKeyframePts)
@@ -242,6 +254,7 @@ class VideoRenderer {
 
     companion object {
         private const val TAG = "VideoRenderer"
+        private const val BENCH_TAG = "BENCHMARK"
 
         fun supportsH265(): Boolean {
             val list = MediaCodecList(MediaCodecList.ALL_CODECS)

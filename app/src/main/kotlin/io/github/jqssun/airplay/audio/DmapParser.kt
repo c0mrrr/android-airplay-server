@@ -6,7 +6,7 @@ import java.nio.ByteOrder
 /** Parses DMAP (iTunes metadata) binary TLV format into a tag->value map. */
 object DmapParser {
 
-    // Tags whose payload is an integer (1/2/4/8 bytes)
+    // tags whose payload is an integer (1/2/4/8 bytes)
     private val INT_TAGS = setOf(
         "astm", // duration ms
         "astn", // track number
@@ -21,7 +21,7 @@ object DmapParser {
         "asgi", // genre id
     )
 
-    // Tags that are containers (contain nested DMAP items)
+    // tags that are containers (contain nested dmap items)
     private val CONTAINER_TAGS = setOf("mlit", "mcon", "mlcl")
 
     fun parse(data: ByteArray): Map<String, Any> {

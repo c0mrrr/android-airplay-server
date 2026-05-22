@@ -70,7 +70,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _serverName = MutableStateFlow(prefs.getString(Prefs.SERVER_NAME, Prefs.DEF_SERVER_NAME)!!)
     val serverName: StateFlow<String> = _serverName.asStateFlow()
 
-    // Settings
+    // settings
     private val _serverPort = MutableStateFlow(prefs.getInt(Prefs.SERVER_PORT, Prefs.DEF_SERVER_PORT))
     val serverPort: StateFlow<Int> = _serverPort.asStateFlow()
 
@@ -86,41 +86,20 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _enforceSdr = MutableStateFlow(prefs.getBoolean(Prefs.ENFORCE_SDR, Prefs.DEF_ENFORCE_SDR))
     val enforceSdr: StateFlow<Boolean> = _enforceSdr.asStateFlow()
 
-    private val _keyAllowFrameDrop =
-            MutableStateFlow(
-                    prefs.getBoolean(
-                            Prefs.KEY_ALLOW_FRAME_DROP,
-                            Prefs.DEF_KEY_ALLOW_FRAME_DROP
-                    )
-            )
+    private val _keyAllowFrameDrop = MutableStateFlow(prefs.getBoolean(Prefs.KEY_ALLOW_FRAME_DROP, Prefs.DEF_KEY_ALLOW_FRAME_DROP))
     val keyAllowFrameDrop: StateFlow<Boolean> = _keyAllowFrameDrop.asStateFlow()
 
-    private val _realtimeDecoderPriority =
-            MutableStateFlow(
-                    prefs.getBoolean(
-                            Prefs.KEY_PRIORITY,
-                            Prefs.DEF_KEY_PRIORITY
-                    )
-            )
+    private val _realtimeDecoderPriority = MutableStateFlow(prefs.getBoolean(Prefs.KEY_PRIORITY, Prefs.DEF_KEY_PRIORITY))
     val realtimeDecoderPriority: StateFlow<Boolean> = _realtimeDecoderPriority.asStateFlow()
 
-    private val _operatingRateHint =
-            MutableStateFlow(
-                    prefs.getBoolean(
-                            Prefs.KEY_OPERATING_RATE,
-                            Prefs.DEF_KEY_OPERATING_RATE
-                    )
-            )
+    private val _operatingRateHint = MutableStateFlow(prefs.getBoolean(Prefs.KEY_OPERATING_RATE, Prefs.DEF_KEY_OPERATING_RATE))
     val operatingRateHint: StateFlow<Boolean> = _operatingRateHint.asStateFlow()
 
-    private val _scheduledOutputBufferRelease =
-            MutableStateFlow(
-                    prefs.getBoolean(
-                            Prefs.SCHEDULED_OUTPUT_BUFFER_RELEASE,
-                            Prefs.DEF_SCHEDULED_OUTPUT_BUFFER_RELEASE
-                    )
-            )
+    private val _scheduledOutputBufferRelease = MutableStateFlow(prefs.getBoolean(Prefs.SCHEDULED_OUTPUT_BUFFER_RELEASE, Prefs.DEF_SCHEDULED_OUTPUT_BUFFER_RELEASE))
     val scheduledOutputBufferRelease: StateFlow<Boolean> = _scheduledOutputBufferRelease.asStateFlow()
+
+    private val _benchmarkLog = MutableStateFlow(prefs.getBoolean(Prefs.BENCHMARK_LOG, Prefs.DEF_BENCHMARK_LOG))
+    val benchmarkLog: StateFlow<Boolean> = _benchmarkLog.asStateFlow()
 
     private val _alacEnabled = MutableStateFlow(prefs.getBoolean(Prefs.ALAC_ENABLED, Prefs.DEF_ALAC_ENABLED))
     val alacEnabled: StateFlow<Boolean> = _alacEnabled.asStateFlow()
@@ -161,27 +140,20 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _launchOnConnect = MutableStateFlow(prefs.getBoolean(Prefs.LAUNCH_ON_CONNECT, Prefs.DEF_LAUNCH_ON_CONNECT))
     val launchOnConnect: StateFlow<Boolean> = _launchOnConnect.asStateFlow()
 
-    // Debug
+    // debug
     private val _debugEnabled = MutableStateFlow(prefs.getBoolean(Prefs.DEBUG_ENABLED, Prefs.DEF_DEBUG_ENABLED))
     val debugEnabled: StateFlow<Boolean> = _debugEnabled.asStateFlow()
 
-    private val _developerOptions =
-            MutableStateFlow(prefs.getBoolean(Prefs.DEVELOPER_OPTIONS, Prefs.DEF_DEVELOPER_OPTIONS))
+    private val _developerOptions = MutableStateFlow(prefs.getBoolean(Prefs.DEVELOPER_OPTIONS, Prefs.DEF_DEVELOPER_OPTIONS))
     val developerOptions: StateFlow<Boolean> = _developerOptions.asStateFlow()
 
-    private val _audioBufferMultiplier =
-            MutableStateFlow(
-                    prefs.getInt(
-                            Prefs.AUDIO_BUFFER_MULTIPLIER,
-                            Prefs.DEF_AUDIO_BUFFER_MULTIPLIER
-                    )
-            )
+    private val _audioBufferMultiplier = MutableStateFlow(prefs.getInt(Prefs.AUDIO_BUFFER_MULTIPLIER, Prefs.DEF_AUDIO_BUFFER_MULTIPLIER))
     val audioBufferMultiplier: StateFlow<Int> = _audioBufferMultiplier.asStateFlow()
 
     private val _debugInfo = MutableStateFlow(DebugInfo())
     val debugInfo: StateFlow<DebugInfo> = _debugInfo.asStateFlow()
 
-    // Audio mode
+    // audio mode
     private val _audioOnly = MutableStateFlow(false)
     val audioOnly: StateFlow<Boolean> = _audioOnly.asStateFlow()
 
@@ -197,7 +169,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _playing = MutableStateFlow(true)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
 
-    // Logs
+    // logs
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
     private val _logLock = Any()
@@ -262,7 +234,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         }
     }
 
-    // Settings setters
+    // settings setters
     fun setServerPort(port: Int) { _serverPort.value = port; prefs.edit().putInt(Prefs.SERVER_PORT, port).apply() }
     fun setServerName(name: String) { _serverName.value = name; prefs.edit().putString(Prefs.SERVER_NAME, name).apply() }
     fun setAutoStart(v: Boolean) { _autoStart.value = v; prefs.edit().putBoolean(Prefs.AUTO_START, v).apply() }
@@ -284,6 +256,10 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     fun setScheduledOutputBufferRelease(v: Boolean) {
         _scheduledOutputBufferRelease.value = v
         prefs.edit().putBoolean(Prefs.SCHEDULED_OUTPUT_BUFFER_RELEASE, v).apply()
+    }
+    fun setBenchmarkLog(v: Boolean) {
+        _benchmarkLog.value = v
+        prefs.edit().putBoolean(Prefs.BENCHMARK_LOG, v).apply()
     }
     fun setSwAlacEnabled(v: Boolean) { _swAlacEnabled.value = v; prefs.edit().putBoolean(Prefs.SW_ALAC_ENABLED, v).apply() }
     fun setAlacEnabled(v: Boolean) { _alacEnabled.value = v; prefs.edit().putBoolean(Prefs.ALAC_ENABLED, v).apply() }
@@ -309,7 +285,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         prefs.edit().putInt(Prefs.AUDIO_BUFFER_MULTIPLIER, value).apply()
     }
 
-    // Service binding
+    // service binding
     fun bindService(svc: AirPlayService) {
         service = svc
         updateFromService()
@@ -335,7 +311,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         service?.setVideoSurface(null)
     }
 
-    // DACP controls
+    // dacp controls
     fun dacpPlayPause() { service?.togglePlayPause() }
     fun dacpNext() { service?.dacpController?.nextItem() }
     fun dacpPrev() { service?.dacpController?.prevItem() }

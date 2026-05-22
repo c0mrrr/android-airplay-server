@@ -32,7 +32,7 @@ class AudioRenderer {
             }
         }
 
-        // Software ALAC path
+        // software alac path
         if (swAlacHandle != 0L && ct == CT_ALAC) {
             _feedSoftwareAlac(data)
             return

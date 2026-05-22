@@ -55,12 +55,12 @@ fun MainScreen(
     val autoAudioMode by viewModel.autoAudioMode.collectAsState()
     var showModePrompt by remember { mutableStateOf(false) }
 
-    // Auto audio mode: skip prompt if preference is on
+    // auto audio mode: skip prompt if preference is on
     LaunchedEffect(audioOnly) {
         if (audioOnly && !autoAudioMode) showModePrompt = true
     }
 
-    // Auto fullscreen when client connects (non-audio), but never while a PIN is pending.
+    // auto fullscreen when client connects (non-audio), but never while a pin is pending
     LaunchedEffect(connections, audioOnly, pin) {
         if (connections > 0 && !audioOnly && autoFullscreen && !fullscreen && pin == null) {
             fullscreen = true
@@ -79,7 +79,7 @@ fun MainScreen(
         }
     }
 
-    // PiP mode: show only the video surface
+    // pip mode: show only the video surface
     if (isInPip) {
         Box(
             modifier = Modifier.fillMaxSize().background(Color.Black),
@@ -94,7 +94,7 @@ fun MainScreen(
         return
     }
 
-    // Restore system bars when exiting PiP back to non-fullscreen
+    // restore system bars when exiting pip back to non-fullscreen
     LaunchedEffect(isInPip) {
         if (!isInPip && !fullscreen) {
             val window = activity?.window ?: return@LaunchedEffect
@@ -102,7 +102,7 @@ fun MainScreen(
         }
     }
 
-    // Exit fullscreen while a PIN is being shown so the dialog isn't covered.
+    // exit fullscreen while a pin is being shown so the dialog isn't covered
     LaunchedEffect(pin) {
         if (pin != null) fullscreen = false
     }
@@ -157,7 +157,7 @@ fun MainScreen(
         }
     }
 
-    // PIN dialog
+    // pin dialog
     if (pin != null) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissPin() },
@@ -176,7 +176,7 @@ fun MainScreen(
         )
     }
 
-    // Audio mode notification
+    // audio mode notification
     if (showModePrompt) {
         AlertDialog(
             onDismissRequest = { showModePrompt = false },
@@ -208,7 +208,7 @@ private fun OverviewContent(
     val debugInfo by viewModel.debugInfo.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Content area
+        // content area
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -290,7 +290,7 @@ private fun OverviewContent(
             }
         }
 
-        // Controls
+        // controls
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -422,7 +422,7 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Cover art
+        // cover art
         Box(
             modifier = Modifier
                 .weight(1f, fill = false)
@@ -451,7 +451,7 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
 
         Spacer(Modifier.height(20.dp))
 
-        // Track info
+        // track info
         Text(
             text = track.title.ifEmpty { stringResource(R.string.unknown_track) },
             style = MaterialTheme.typography.titleMedium,
@@ -480,7 +480,7 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
 
         Spacer(Modifier.height(16.dp))
 
-        // Progress bar (read-only, seeking not supported by AirPlay receiver)
+        // progress bar (read-only, seeking not supported by AirPlay receiver)
         if (durationMs > 0) {
             LinearProgressIndicator(
                 progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
@@ -498,7 +498,7 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
-        // Playback controls
+        // playback controls
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,

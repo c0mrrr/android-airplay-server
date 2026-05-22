@@ -49,7 +49,6 @@
     <string name="section_server">Server</string>
     <string name="section_connection">Connection</string>
     <string name="section_display">Display</string>
-    <string name="section_audio">Audio</string>
     <string name="section_decode">Decode</string>
     <string name="section_developer">Developer</string>
 
@@ -93,11 +92,6 @@
     <string name="setting_overscanned_desc">Add pixel boundary for full-screen overscan displays</string>
     <string name="chip_custom">Custom</string>
 
-    <!-- Settings: Audio -->
-    <string name="setting_audio_delay">Override audio delay</string>
-    <string name="setting_audio_delay_desc">Set a custom audio latency reported to client</string>
-    <string name="audio_delay_value">%dms</string>
-
     <!-- Settings: Decode -->
     <string name="setting_h265">H.265 (HEVC)</string>
     <string name="setting_h265_desc">Enable H.265 video decoding if device supports it</string>
@@ -112,7 +106,7 @@
 
     <!-- Settings: Developer -->
     <string name="setting_developer_options">Developer options</string>
-    <string name="setting_developer_options_desc">Show experimental options</string>
+    <string name="setting_developer_options_desc">Show options for advanced users</string>
     <string name="setting_key_allow_frame_drop">MediaFormat.KEY_ALLOW_FRAME_DROP</string>
     <string name="setting_key_allow_frame_drop_desc">Allow video decoders to drop frames internally to keep up on Android 10+</string>
     <string name="setting_realtime_decoder_priority">MediaFormat.KEY_PRIORITY</string>
@@ -121,9 +115,14 @@
     <string name="setting_operating_rate_hint_desc">Request maximum operating rate for video decoder</string>
     <string name="setting_scheduled_output_buffer_release">Aligned frame pacing</string>
     <string name="setting_scheduled_output_buffer_release_desc">Schedule each decoded frame to the VSYNC matching its presentation timestamp</string>
+    <string name="setting_audio_delay">Override audio delay</string>
+    <string name="setting_audio_delay_desc">Set a custom audio latency reported to client</string>
+    <string name="audio_delay_value">%dms</string>
     <string name="setting_audio_buffer_multiplier">Audio buffer size</string>
     <string name="setting_audio_buffer_multiplier_desc">AudioTrack buffer size multiplier</string>
     <string name="setting_audio_buffer_multiplier_value">%dx</string>
     <string name="setting_debug_overlay">Show debug overlay</string>
-    <string name="setting_debug_overlay_desc">Display stats (bitrate, FPS, codec) over video</string>
+    <string name="setting_debug_overlay_desc">Overlay stream stats on video: codec, FPS, bitrate, jitter, frames, drops</string>
+    <string name="setting_benchmark_log">Enable debug logging</string>
+    <string name="setting_benchmark_log_desc">Log stream stats to logcat: codec, FPS, bitrate, jitter, frames, drops</string>
 </resources>

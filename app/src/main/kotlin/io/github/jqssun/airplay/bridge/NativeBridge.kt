@@ -28,7 +28,7 @@ object NativeBridge {
     external fun nativeGetRaopServiceName(handle: Long): String?
     external fun nativeGetServerName(handle: Long): String?
 
-    // Software ALAC decoder
+    // software alac decoder
     external fun nativeAlacInit(frameLength: Int, numChannels: Int, bitDepth: Int,
                                 pb: Int, mb: Int, kb: Int): Long
     external fun nativeAlacDecode(handle: Long, input: ByteArray): ByteArray?

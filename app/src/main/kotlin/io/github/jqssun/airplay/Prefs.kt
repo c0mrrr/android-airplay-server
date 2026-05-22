@@ -28,6 +28,7 @@ object Prefs {
     const val AUDIO_LATENCY_MS = "audio_latency_ms"; const val DEF_AUDIO_LATENCY_MS = -1
     const val DEBUG_ENABLED = "debug_enabled"; const val DEF_DEBUG_ENABLED = false
     const val DEVELOPER_OPTIONS = "developer_options"; const val DEF_DEVELOPER_OPTIONS = false
+    const val BENCHMARK_LOG = "benchmark_log"; const val DEF_BENCHMARK_LOG = false
     const val IDLE_PREVIEW = "idle_preview"; const val DEF_IDLE_PREVIEW = false
     const val AUTO_FULLSCREEN = "auto_fullscreen"; const val DEF_AUTO_FULLSCREEN = true
     const val AUTO_AUDIO_MODE = "auto_audio_mode"; const val DEF_AUTO_AUDIO_MODE = true

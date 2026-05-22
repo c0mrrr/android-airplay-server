@@ -12,7 +12,7 @@ data class TrackInfo(
 ) {
     companion object {
         fun fromDmap(map: Map<String, Any>, existingArt: Bitmap? = null): TrackInfo {
-            // DMAP data is often wrapped in mlit container — flatten it
+            // DMAP data is often wrapped in mlit container
             val flat = _flatten(map)
             return TrackInfo(
                 title = flat["minm"] as? String ?: "",

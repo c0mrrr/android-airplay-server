@@ -55,6 +55,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val realtimeDecoderPriority by viewModel.realtimeDecoderPriority.collectAsState()
     val operatingRateHint by viewModel.operatingRateHint.collectAsState()
     val scheduledOutputBufferRelease by viewModel.scheduledOutputBufferRelease.collectAsState()
+    val benchmarkLog by viewModel.benchmarkLog.collectAsState()
     val audioBufferMultiplier by viewModel.audioBufferMultiplier.collectAsState()
 
     Column(
@@ -219,31 +220,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onCheckedChange = { viewModel.setOverscanned(it) }
         )
 
-        SectionHeader(stringResource(R.string.section_audio))
-
-        SettingSwitch(
-            title = stringResource(R.string.setting_audio_delay),
-            description = stringResource(R.string.setting_audio_delay_desc),
-            checked = audioLatencyMs >= 0,
-            onCheckedChange = { viewModel.setAudioLatencyMs(if (it) 250 else -1) }
-        )
-
-        if (audioLatencyMs >= 0) {
-            var sliderVal by remember(audioLatencyMs) { mutableFloatStateOf(audioLatencyMs.toFloat()) }
-            ListItem(
-                headlineContent = {
-                    Slider(
-                        value = sliderVal,
-                        onValueChange = { sliderVal = it },
-                        onValueChangeFinished = { viewModel.setAudioLatencyMs(sliderVal.roundToInt()) },
-                        valueRange = 0f..1000f,
-                        steps = 19
-                    )
-                },
-                trailingContent = { Text(stringResource(R.string.audio_delay_value, sliderVal.roundToInt())) }
-            )
-        }
-
         SectionHeader(stringResource(R.string.section_decode))
 
         SettingSwitch(
@@ -292,6 +268,13 @@ fun SettingsScreen(viewModel: MainViewModel) {
             )
 
             SettingSwitch(
+                title = stringResource(R.string.setting_enforce_sdr),
+                description = stringResource(R.string.setting_enforce_sdr_desc),
+                checked = enforceSdr,
+                onCheckedChange = { viewModel.setEnforceSdr(it) }
+            )
+
+            SettingSwitch(
                 title = stringResource(R.string.setting_realtime_decoder_priority),
                 description = stringResource(R.string.setting_realtime_decoder_priority_desc),
                 checked = realtimeDecoderPriority,
@@ -313,11 +296,27 @@ fun SettingsScreen(viewModel: MainViewModel) {
             )
 
             SettingSwitch(
-                title = stringResource(R.string.setting_enforce_sdr),
-                description = stringResource(R.string.setting_enforce_sdr_desc),
-                checked = enforceSdr,
-                onCheckedChange = { viewModel.setEnforceSdr(it) }
+                title = stringResource(R.string.setting_audio_delay),
+                description = stringResource(R.string.setting_audio_delay_desc),
+                checked = audioLatencyMs >= 0,
+                onCheckedChange = { viewModel.setAudioLatencyMs(if (it) 250 else -1) }
             )
+
+            if (audioLatencyMs >= 0) {
+                var sliderVal by remember(audioLatencyMs) { mutableFloatStateOf(audioLatencyMs.toFloat()) }
+                ListItem(
+                    headlineContent = {
+                        Slider(
+                            value = sliderVal,
+                            onValueChange = { sliderVal = it },
+                            onValueChangeFinished = { viewModel.setAudioLatencyMs(sliderVal.roundToInt()) },
+                            valueRange = 0f..1000f,
+                            steps = 19
+                        )
+                    },
+                    trailingContent = { Text(stringResource(R.string.audio_delay_value, sliderVal.roundToInt())) }
+                )
+            }
 
             ListItem(
                 headlineContent = { Text(stringResource(R.string.setting_audio_buffer_multiplier)) },
@@ -344,6 +343,13 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 description = stringResource(R.string.setting_debug_overlay_desc),
                 checked = debugEnabled,
                 onCheckedChange = { viewModel.setDebugEnabled(it) }
+            )
+
+            SettingSwitch(
+                title = stringResource(R.string.setting_benchmark_log),
+                description = stringResource(R.string.setting_benchmark_log_desc),
+                checked = benchmarkLog,
+                onCheckedChange = { viewModel.setBenchmarkLog(it) }
             )
         }
     }
