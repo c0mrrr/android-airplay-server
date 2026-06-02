@@ -8,6 +8,8 @@
 
 A fully featured free and open-source implementation of AirPlay for Android that turns your device into an AirPlay-compatible display and speaker, based on [UxPlay](https://github.com/FDH2/UxPlay).
 
+<video loop src='https://github.com/user-attachments/assets/77c827d3-4f4e-4cfa-8698-3aa8ae557d54' alt="demo" width="200" style="display: block; margin: auto;"></video>
+
 ## Features
 
 - Screen mirroring with H.264 and H.265 (HEVC) video decoding
@@ -19,8 +21,6 @@ A fully featured free and open-source implementation of AirPlay for Android that
 - Audio latency control and support for software decoder fallback
 - Debug overlay with real-time statistics (FPS, bitrate, codec, resolution, frame count, audio volume, etc.)
 - Android native media session integration with notification controls
-
-<img alt="AirPlay Server on Android" src="https://github.com/user-attachments/assets/c36a1b02-5a8a-4915-bbff-cee71d3ebac0" />
 
 > [!WARNING]
 > DRM content (e.g. from the Apple TV application) is not supported.
