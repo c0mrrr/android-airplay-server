@@ -9,17 +9,12 @@ import android.view.Surface
 class VideoRenderer {
 
     private val lock = Object()
+    private val pipeline = VideoPipeline()
     private var codec: MediaCodec? = null
-    private var surface: Surface? = null
+    private var displaySurface: Surface? = null
     private var currentH265 = false
-    @Volatile private var running = false
     private var videoWidth = 0
     private var videoHeight = 0
-
-    // cache last keyframe so decoder can bootstrap after late surface attach
-    private var cachedKeyframe: ByteArray? = null
-    private var cachedKeyframePts: Long = 0
-    private var cachedKeyframeH265 = false
 
     // stats
     @Volatile var fps = 0; private set
@@ -50,12 +45,19 @@ class VideoRenderer {
     fun setResolution(w: Int, h: Int) {
         videoWidth = w
         videoHeight = h
+        pipeline.setVideoSize(w, h)
     }
 
-    fun setSurface(surface: Surface?) = synchronized(lock) {
-        val changed = this.surface !== surface
-        this.surface = surface
-        if (changed && codec != null) stopCodec()
+    // doesn't restart codec; decoder renders into pipeline's own persistent surface
+    fun setSurface(surface: Surface) = synchronized(lock) {
+        displaySurface = surface
+        pipeline.setDisplaySurface(surface)
+    }
+
+    fun clearSurface(surface: Surface) = synchronized(lock) {
+        if (displaySurface !== surface) return@synchronized
+        displaySurface = null
+        pipeline.setDisplaySurface(null)
     }
 
     private fun _updateStats(size: Int) {
@@ -86,26 +88,17 @@ class VideoRenderer {
     fun feedFrame(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         _updateStats(data.size)
 
-        // always cache keyframes, even without a surface
-        if (_isKeyframe(data, isH265)) {
-            cachedKeyframe = data.copyOf()
-            cachedKeyframePts = ntpTimeNs
-            cachedKeyframeH265 = isH265
-        }
-
         synchronized(lock) {
-            if (surface == null) return
+            if (videoWidth == 0 || videoHeight == 0) return
 
-            // codec switch when needed
             if (codec == null || isH265 != currentH265) {
+                // a stale reference frame decodes to corruption, so wait for a keyframe to (re)start
+                if (!_isKeyframe(data, isH265)) {
+                    if (codec != null) stopCodec()
+                    return
+                }
                 stopCodec()
                 startCodec(isH265)
-                // feed cached keyframe to bootstrap decoder
-                cachedKeyframe?.let { kf ->
-                    if (cachedKeyframeH265 == isH265) {
-                        _feedToCodec(kf, cachedKeyframePts)
-                    }
-                }
             }
 
             _feedToCodec(data, ntpTimeNs)
@@ -147,7 +140,9 @@ class VideoRenderer {
     }
 
     private fun startCodec(h265: Boolean) {
-        val s = surface ?: return
+        pipeline.start()
+        pipeline.setVideoSize(videoWidth, videoHeight)
+        val s = pipeline.inputSurface ?: return
         currentH265 = h265
         val mime = if (h265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
 
@@ -173,12 +168,10 @@ class VideoRenderer {
             it.start()
         }
         codecName = if (h265) "H.265" else "H.264"
-        running = true
-        Log.i(TAG, "Video codec started: $mime")
+        Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight}")
     }
 
     private fun stopCodec() {
-        running = false
         _frameIntervalIdx = 0
         _frameIntervalCount = 0
         _lastOutputFrameNs = 0L
@@ -198,28 +191,25 @@ class VideoRenderer {
         val info = MediaCodec.BufferInfo()
         while (true) {
             val idx = c.dequeueOutputBuffer(info, 0)
-            if (idx >= 0) {
-                _recordOutputFrameTime()
-                if (scheduledOutputBufferRelease) {
-                    // schedule the frame at the VSYNC matching its NTP presentation time
-                    val ptsUs = info.presentationTimeUs
-                    if (_ptsBaseUs == Long.MIN_VALUE) {
-                        _ptsBaseUs = ptsUs
-                        _wallBaseNs = System.nanoTime()
-                    }
-                    c.releaseOutputBuffer(idx, _wallBaseNs + (ptsUs - _ptsBaseUs) * 1000L)
-                } else {
-                    c.releaseOutputBuffer(idx, true)
+            if (idx < 0) break
+            _recordOutputFrameTime()
+            if (scheduledOutputBufferRelease) {
+                // schedule frame at VSYNC matching its NTP presentation time
+                val ptsUs = info.presentationTimeUs
+                if (_ptsBaseUs == Long.MIN_VALUE) {
+                    _ptsBaseUs = ptsUs
+                    _wallBaseNs = System.nanoTime()
                 }
+                c.releaseOutputBuffer(idx, _wallBaseNs + (ptsUs - _ptsBaseUs) * 1000L)
             } else {
-                break
+                c.releaseOutputBuffer(idx, true)
             }
         }
     }
 
     fun release() = synchronized(lock) {
         stopCodec()
-        cachedKeyframe = null
+        pipeline.release()
         fps = 0; bitrateBps = 0; frameCount = 0; codecName = ""
         droppedFrames = 0; framePacingJitterUs = 0
         _framesThisSec = 0; _bytesThisSec = 0

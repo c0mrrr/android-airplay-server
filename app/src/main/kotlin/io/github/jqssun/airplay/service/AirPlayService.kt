@@ -297,8 +297,12 @@ class AirPlayService : Service(), RaopCallbackHandler {
         log("Server stopped")
     }
 
-    fun setVideoSurface(surface: Surface?) {
+    fun setVideoSurface(surface: Surface) {
         videoRenderer.setSurface(surface)
+    }
+
+    fun clearVideoSurface(surface: Surface) {
+        videoRenderer.clearSurface(surface)
     }
 
     override fun onDestroy() {

@@ -6,6 +6,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -49,18 +51,28 @@ fun MainScreen(
     viewModel: MainViewModel,
     isInPip: Boolean = false,
     onSurfaceAvailable: (android.view.Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
+    onSurfaceDestroyed: (android.view.Surface) -> Unit,
     onPip: () -> Unit = {}
 ) {
     var tab by remember { mutableStateOf(Tab.OVERVIEW) }
     var fullscreen by remember { mutableStateOf(false) }
     val pin by viewModel.pinCode.collectAsState()
-    val videoAspect by viewModel.videoAspect.collectAsState()
     val connections by viewModel.connectionCount.collectAsState()
     val audioOnly by viewModel.audioOnly.collectAsState()
     val autoFullscreen by viewModel.autoFullscreen.collectAsState()
     val autoAudioMode by viewModel.autoAudioMode.collectAsState()
     var showModePrompt by remember { mutableStateOf(false) }
+
+    val video = remember {
+        movableContentOf {
+            val aspect by viewModel.videoAspect.collectAsState()
+            MirroringView(
+                onSurfaceAvailable = onSurfaceAvailable,
+                onSurfaceDestroyed = onSurfaceDestroyed,
+                aspectRatio = aspect
+            )
+        }
+    }
 
     // auto audio mode: skip prompt if preference is on
     LaunchedEffect(audioOnly) {
@@ -92,11 +104,7 @@ fun MainScreen(
             modifier = Modifier.fillMaxSize().background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            MirroringView(
-                onSurfaceAvailable = onSurfaceAvailable,
-                onSurfaceDestroyed = onSurfaceDestroyed,
-                aspectRatio = videoAspect
-            )
+            video()
         }
         return
     }
@@ -118,9 +126,7 @@ fun MainScreen(
         BackHandler { fullscreen = false }
         FullscreenVideo(
             viewModel = viewModel,
-            onSurfaceAvailable = onSurfaceAvailable,
-            onSurfaceDestroyed = onSurfaceDestroyed,
-            aspectRatio = videoAspect,
+            video = video,
             onExitFullscreen = { fullscreen = false },
             onPip = onPip
         )
@@ -142,7 +148,7 @@ fun MainScreen(
         ) { padding ->
             Box(modifier = Modifier.padding(padding)) {
                 TabContent(
-                    tab, viewModel, onSurfaceAvailable, onSurfaceDestroyed,
+                    tab, viewModel, video,
                     onFullscreen = { fullscreen = true }, onPip = onPip, showAudioMode = audioOnly
                 )
             }
@@ -185,15 +191,14 @@ fun MainScreen(
 private fun TabContent(
     tab: Tab,
     viewModel: MainViewModel,
-    onSurfaceAvailable: (android.view.Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
+    video: @Composable () -> Unit,
     onFullscreen: () -> Unit,
     onPip: () -> Unit,
     showAudioMode: Boolean
 ) {
     when (tab) {
         Tab.OVERVIEW -> OverviewContent(
-            viewModel, onSurfaceAvailable, onSurfaceDestroyed,
+            viewModel, video,
             onFullscreen = onFullscreen, onPip = onPip, showAudioMode = showAudioMode
         )
         Tab.LOGS -> LogsScreen(viewModel)
@@ -204,8 +209,7 @@ private fun TabContent(
 @Composable
 private fun OverviewContent(
     viewModel: MainViewModel,
-    onSurfaceAvailable: (android.view.Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
+    video: @Composable () -> Unit,
     onFullscreen: () -> Unit,
     onPip: () -> Unit,
     showAudioMode: Boolean = false
@@ -213,7 +217,6 @@ private fun OverviewContent(
     val state by viewModel.serverState.collectAsState()
     val connections by viewModel.connectionCount.collectAsState()
     val serverName by viewModel.serverName.collectAsState()
-    val videoAspect by viewModel.videoAspect.collectAsState()
     val videoResolution by viewModel.videoResolution.collectAsState()
     val idlePreview by viewModel.idlePreview.collectAsState()
     val debugEnabled by viewModel.debugEnabled.collectAsState()
@@ -239,11 +242,7 @@ private fun OverviewContent(
                 NowPlayingContent(viewModel)
             } else {
                 if (state == ServerState.RUNNING && (connections > 0 || idlePreview)) {
-                    MirroringView(
-                        onSurfaceAvailable = onSurfaceAvailable,
-                        onSurfaceDestroyed = onSurfaceDestroyed,
-                        aspectRatio = videoAspect
-                    )
+                    video()
                 }
                 if (state != ServerState.RUNNING || connections == 0) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -369,9 +368,7 @@ private fun OverviewContent(
 @Composable
 private fun FullscreenVideo(
     viewModel: MainViewModel,
-    onSurfaceAvailable: (android.view.Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
-    aspectRatio: Float,
+    video: @Composable () -> Unit,
     onExitFullscreen: () -> Unit,
     onPip: () -> Unit
 ) {
@@ -379,27 +376,39 @@ private fun FullscreenVideo(
     val debugEnabled by viewModel.debugEnabled.collectAsState()
     val debugInfo by viewModel.debugInfo.collectAsState()
 
+    var controlsVisible by remember { mutableStateOf(true) }
+    var tapTick by remember { mutableStateOf(0) }
+    LaunchedEffect(tapTick) {
+        controlsVisible = true
+        delay(8000)
+        controlsVisible = false
+    }
+
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) { detectTapGestures { tapTick++ } },
         contentAlignment = Alignment.Center
     ) {
-        MirroringView(
-            onSurfaceAvailable = onSurfaceAvailable,
-            onSurfaceDestroyed = onSurfaceDestroyed,
-            aspectRatio = aspectRatio
-        )
-        Row(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-            IconButton(onClick = onPip, modifier = Modifier.dpadFocus()) {
-                Icon(
-                    painterResource(R.drawable.ic_pip), contentDescription = stringResource(R.string.cd_pip),
-                    tint = Color.White.copy(alpha = 0.7f)
-                )
-            }
-            IconButton(onClick = onExitFullscreen, modifier = Modifier.dpadFocus()) {
-                Icon(
-                    Icons.Default.FullscreenExit, contentDescription = stringResource(R.string.cd_exit_fullscreen),
-                    tint = Color.White.copy(alpha = 0.7f)
-                )
+        video()
+        androidx.compose.animation.AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
+            Row(modifier = Modifier.padding(8.dp)) {
+                IconButton(onClick = onPip, modifier = Modifier.dpadFocus()) {
+                    Icon(
+                        painterResource(R.drawable.ic_pip), contentDescription = stringResource(R.string.cd_pip),
+                        tint = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+                IconButton(onClick = onExitFullscreen, modifier = Modifier.dpadFocus()) {
+                    Icon(
+                        Icons.Default.FullscreenExit, contentDescription = stringResource(R.string.cd_exit_fullscreen),
+                        tint = Color.White.copy(alpha = 0.7f)
+                    )
+                }
             }
         }
         if (debugEnabled) {

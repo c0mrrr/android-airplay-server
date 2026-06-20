@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
                     viewModel = viewModel,
                     isInPip = isInPip.value,
                     onSurfaceAvailable = { viewModel.onSurfaceAvailable(it) },
-                    onSurfaceDestroyed = { viewModel.onSurfaceDestroyed() },
+                    onSurfaceDestroyed = { viewModel.onSurfaceDestroyed(it) },
                     onPip = { enterPip() }
                 )
             }

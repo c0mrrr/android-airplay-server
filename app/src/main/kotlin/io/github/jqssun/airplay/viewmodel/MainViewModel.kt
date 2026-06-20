@@ -307,8 +307,8 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         service?.setVideoSurface(surface)
     }
 
-    fun onSurfaceDestroyed() {
-        service?.setVideoSurface(null)
+    fun onSurfaceDestroyed(surface: Surface) {
+        service?.clearVideoSurface(surface)
     }
 
     // dacp controls

@@ -6,7 +6,6 @@ import android.view.SurfaceView
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -14,7 +13,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 @Composable
 fun MirroringView(
     onSurfaceAvailable: (Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
+    onSurfaceDestroyed: (Surface) -> Unit,
     aspectRatio: Float = 16f / 9f,
     modifier: Modifier = Modifier
 ) {
@@ -23,9 +22,11 @@ fun MirroringView(
             override fun surfaceCreated(holder: SurfaceHolder) {
                 onSurfaceAvailable(holder.surface)
             }
-            override fun surfaceChanged(holder: SurfaceHolder, fmt: Int, w: Int, h: Int) {}
+            override fun surfaceChanged(holder: SurfaceHolder, fmt: Int, w: Int, h: Int) {
+                onSurfaceAvailable(holder.surface)
+            }
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                onSurfaceDestroyed()
+                onSurfaceDestroyed(holder.surface)
             }
         }
     }
@@ -40,8 +41,4 @@ fun MirroringView(
             .aspectRatio(aspectRatio, matchHeightConstraintsFirst = aspectRatio < 1f)
             .fillMaxSize()
     )
-
-    DisposableEffect(Unit) {
-        onDispose { onSurfaceDestroyed() }
-    }
 }
