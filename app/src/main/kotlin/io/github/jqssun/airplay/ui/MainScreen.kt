@@ -63,15 +63,14 @@ fun MainScreen(
     val autoAudioMode by viewModel.autoAudioMode.collectAsState()
     var showModePrompt by remember { mutableStateOf(false) }
 
-    val video = remember {
-        movableContentOf {
-            val aspect by viewModel.videoAspect.collectAsState()
-            MirroringView(
-                onSurfaceAvailable = onSurfaceAvailable,
-                onSurfaceDestroyed = onSurfaceDestroyed,
-                aspectRatio = aspect
-            )
-        }
+    // don't use movableContentOf: moving AndroidView across subcomposition boundaries makes it crash on reparent
+    val video: @Composable () -> Unit = {
+        val aspect by viewModel.videoAspect.collectAsState()
+        MirroringView(
+            onSurfaceAvailable = onSurfaceAvailable,
+            onSurfaceDestroyed = onSurfaceDestroyed,
+            aspectRatio = aspect
+        )
     }
 
     // auto audio mode: skip prompt if preference is on

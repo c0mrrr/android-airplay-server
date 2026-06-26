@@ -32,8 +32,8 @@ android {
         applicationId = "io.github.jqssun.airplay"
         minSdk = 24
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.0.13"
+        versionCode = 14
+        versionName = "0.0.14"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
