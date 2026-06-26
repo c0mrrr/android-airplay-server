@@ -108,16 +108,20 @@ class VideoRenderer {
 
     private fun _feedToCodec(data: ByteArray, ntpTimeNs: Long) {
         val c = codec ?: return
-        val idx = c.dequeueInputBuffer(5000)
-        if (idx >= 0) {
-            val buf = c.getInputBuffer(idx) ?: return
-            buf.clear()
-            buf.put(data)
-            c.queueInputBuffer(idx, 0, data.size, ntpTimeNs / 1000, 0)
-        } else {
-            droppedFrames++
-            Log.w(TAG, "Decoder input queue full; dropping frame. drops=$droppedFrames")
+        // dropping a frame desyncs decoder until the next keyframe, but source would only send one on (re)connect
+        repeat(FEED_RETRIES) {
+            val idx = c.dequeueInputBuffer(FEED_WAIT_US)
+            if (idx >= 0) {
+                val buf = c.getInputBuffer(idx) ?: return
+                buf.clear()
+                buf.put(data)
+                c.queueInputBuffer(idx, 0, data.size, ntpTimeNs / 1000, 0)
+                return
+            }
+            drainOutput()
         }
+        droppedFrames++
+        Log.w(TAG, "Decoder input queue full; dropping frame. drops=$droppedFrames")
     }
 
     private fun _isKeyframe(data: ByteArray, isH265: Boolean): Boolean {
@@ -245,6 +249,8 @@ class VideoRenderer {
     companion object {
         private const val TAG = "VideoRenderer"
         private const val BENCH_TAG = "BENCHMARK"
+        private const val FEED_WAIT_US = 20_000L
+        private const val FEED_RETRIES = 10
 
         fun supportsH265(): Boolean {
             val list = MediaCodecList(MediaCodecList.ALL_CODECS)
