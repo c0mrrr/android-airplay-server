@@ -98,11 +98,16 @@ class VideoRenderer {
                     return
                 }
                 stopCodec()
-                startCodec(isH265)
             }
 
-            _feedToCodec(data, ntpTimeNs)
-            drainOutput()
+            try {
+                if (codec == null) startCodec(isH265)
+                _feedToCodec(data, ntpTimeNs)
+                drainOutput()
+            } catch (e: Exception) {
+                Log.w(TAG, "Codec error, resetting", e)
+                stopCodec()
+            }
         }
     }
 
@@ -130,13 +135,14 @@ class VideoRenderer {
         while (i <= data.size - 5) {
             if (data[i] == 0.toByte() && data[i + 1] == 0.toByte() &&
                 data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte()) {
-                return if (isH265) {
+                val key = if (isH265) {
                     val type = (data[i + 4].toInt() shr 1) and 0x3F
-                    type == 19 || type == 20 || type == 32 || type == 33
+                    type == 19 || type == 20 || type == 21 || type == 32 || type == 33
                 } else {
                     val type = data[i + 4].toInt() and 0x1F
                     type == 5 || type == 7
                 }
+                if (key) return true
             }
             i++
         }
@@ -151,7 +157,8 @@ class VideoRenderer {
         val mime = if (h265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
 
         val format = MediaFormat.createVideoFormat(mime, videoWidth, videoHeight)
-        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1024 * 1024)
+        val maxInput = maxOf(videoWidth * videoHeight * 3 / 4, 1024 * 1024)
+        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, maxInput)
         if (enforceSdr) {
             format.setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
             format.setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
