@@ -40,6 +40,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val resolution by viewModel.resolution.collectAsState()
     val idlePreview by viewModel.idlePreview.collectAsState()
     val autoFullscreen by viewModel.autoFullscreen.collectAsState()
+    val keepScreenOn by viewModel.keepScreenOn.collectAsState()
     val autoAudioMode by viewModel.autoAudioMode.collectAsState()
     val launchOnConnect by viewModel.launchOnConnect.collectAsState()
     val maxFps by viewModel.maxFps.collectAsState()
@@ -158,6 +159,13 @@ fun SettingsScreen(viewModel: MainViewModel) {
             description = stringResource(R.string.setting_auto_fullscreen_desc),
             checked = autoFullscreen,
             onCheckedChange = { viewModel.setAutoFullscreen(it) }
+        )
+
+        SettingSwitch(
+            title = stringResource(R.string.setting_keep_screen_on),
+            description = stringResource(R.string.setting_keep_screen_on_desc),
+            checked = keepScreenOn,
+            onCheckedChange = { viewModel.setKeepScreenOn(it) }
         )
 
         SettingSwitch(

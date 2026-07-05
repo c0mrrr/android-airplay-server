@@ -74,6 +74,8 @@
     <string name="setting_idle_preview_desc">Show video surface while waiting for a connection</string>
     <string name="setting_auto_fullscreen">Enter fullscreen automatically</string>
     <string name="setting_auto_fullscreen_desc">Enter fullscreen when a client connects</string>
+    <string name="setting_keep_screen_on">Keep screen on</string>
+    <string name="setting_keep_screen_on_desc">Prevent screen from sleeping while a client is connected</string>
     <string name="setting_auto_audio_mode">Enter audio mode automatically</string>
     <string name="setting_auto_audio_mode_desc">Skip the prompt when switching to audio mode</string>
     <string name="setting_launch_on_connect">Open this application on connect</string>
