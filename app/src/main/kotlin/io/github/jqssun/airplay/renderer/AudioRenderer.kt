@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.util.Log
 import io.github.jqssun.airplay.bridge.NativeBridge
 import java.nio.ByteBuffer
+import kotlin.math.pow
 
 class AudioRenderer {
 
@@ -21,8 +22,15 @@ class AudioRenderer {
     @Volatile var realtimeDecoderPriority = true
     @Volatile var volume = 1.0f; private set
     @Volatile var codecLabel = ""; private set
+    @Volatile private var pendingReset = false
+
+    fun markSessionEnded() { pendingReset = true }
 
     fun feedAudio(data: ByteArray, ct: Int, ntpTimeNs: Long) {
+        if (pendingReset) {
+            pendingReset = false
+            stop()
+        }
         if (ct != currentCt || (codec == null && swAlacHandle == 0L)) {
             if (ct == failedCt) {
                 if (!_ensureSoftwareAlac(ct)) return
@@ -184,9 +192,12 @@ class AudioRenderer {
     }
 
     fun setVolume(vol: Float) {
-        volume = if (vol <= -144f) 0f
-                 else if (vol >= 0f) 1f
-                 else (vol + 144f) / 144f
+        // max: 0; min: -30; mute: -144
+        volume = when {
+            vol <= -144f -> 0f
+            vol >= 0f -> 1f
+            else -> 10f.pow(vol / 20f)
+        }
         track?.setVolume(volume)
     }
 

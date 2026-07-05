@@ -371,11 +371,13 @@ class AirPlayService : Service(), RaopCallbackHandler {
             _positionMs.value = 0
             _durationMs.value = 0
             mediaSession?.isActive = false
+            audioRenderer.markSessionEnded()
         }
         log("Client disconnected (${_connectionCount.value})")
     }
 
     override fun onConnectionReset(reason: Int) {
+        audioRenderer.markSessionEnded()
         log("Connection reset: $reason")
     }
 
