@@ -22,8 +22,10 @@ A fully featured free and open-source implementation of AirPlay for Android that
 ## Features
 
 - Screen mirroring with H.264 and H.265 (HEVC) video decoding
+- Video streaming with support for live streams and remote playback controls
 - Audio streaming with AAC-ELD, AAC-LC and ALAC audio decoding
-- Music streaming with track information, cover art, and playback controls
+- Music streaming with track information, cover art, and remote playback controls
+- Support for Android TV with directional pad navigation and seeking controls
 - Support for Picture-in-Picture, automatic resolution and mode switching
 - Optional PIN authentication
 - Video resolution, overscan, and frame rate control
@@ -36,15 +38,15 @@ A fully featured free and open-source implementation of AirPlay for Android that
 
 ## Implementation
 
-This application uses the C-based [UxPlay](https://github.com/FDH2/UxPlay) library to implement the AirPlay/RAOP protocol, with a JNI bridge to the Android application layer. Audio can be decoded via MediaCodec (AAC) or the Apple ALAC decoder (software fallback), while video is always decoded via MediaCodec and rendered to a SurfaceView.
+This application uses the C-based [UxPlay](https://github.com/FDH2/UxPlay) library to implement the AirPlay/RAOP protocol, with a JNI bridge to the Android application layer. Audio can be decoded via MediaCodec (AAC) or the Apple ALAC decoder (software fallback), while mirroring video is decoded via MediaCodec and rendered to a SurfaceView. HLS sessions are served through a local playlist proxy.
 
 ```mermaid
 flowchart LR
     AppleDevice["Apple Device (Sender)"]
-    UxPlay["UxPlay (C/JNI)<br/>RAOP + mDNS<br/>FairPlay"]
-    AndroidApp["Android (Receiver)<br/>MediaCodec + AudioTrack"]
+    UxPlay["UxPlay (C/JNI)<br/>RAOP + mDNS<br/>FairPlay + HLS"]
+    AndroidApp["Android (Receiver)<br/>MediaCodec + AudioTrack<br/>ExoPlayer (HLS)"]
 
-    AppleDevice -- "RAOP" --> UxPlay
+    AppleDevice -- "RAOP / HLS" --> UxPlay
     UxPlay --> AndroidApp
 ```
 

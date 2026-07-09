@@ -36,12 +36,20 @@ import io.github.jqssun.airplay.audio.TrackInfo
 import io.github.jqssun.airplay.bridge.NativeBridge
 import io.github.jqssun.airplay.bridge.RaopCallbackHandler
 import io.github.jqssun.airplay.discovery.NsdServiceManager
+import io.github.jqssun.airplay.renderer.AirPlayVideoPlayer
 import io.github.jqssun.airplay.renderer.AudioRenderer
 import io.github.jqssun.airplay.renderer.VideoRenderer
 import io.github.jqssun.airplay.viewmodel.DebugInfo
 import java.net.NetworkInterface
+import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+data class VideoPlaybackInfo(
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val playing: Boolean = true,
+)
 
 class AirPlayService : Service(), RaopCallbackHandler {
 
@@ -52,6 +60,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     val videoRenderer = VideoRenderer()
     val audioRenderer = AudioRenderer()
+    val airPlayVideoPlayer by lazy { AirPlayVideoPlayer(this) }
 
     private val _serverState = MutableStateFlow(ServerState.STOPPED)
     val serverState = _serverState.asStateFlow()
@@ -67,6 +76,32 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     private val _audioOnly = MutableStateFlow(false)
     val audioOnly = _audioOnly.asStateFlow()
+
+    private val _videoPlaybackActive = MutableStateFlow(false)
+    val videoPlaybackActive = _videoPlaybackActive.asStateFlow()
+
+    private val _videoPlaybackInfo = MutableStateFlow(VideoPlaybackInfo())
+    val videoPlaybackInfo = _videoPlaybackInfo.asStateFlow()
+
+    // bumped per /play so the ui resets transport state on back-to-back plays too
+    private val _videoPlaySeq = MutableStateFlow(0L)
+    val videoPlaySeq = _videoPlaySeq.asStateFlow()
+
+    private val _videoPlaybackAspect = MutableStateFlow(16f / 9f)
+    val videoPlaybackAspect = _videoPlaybackAspect.asStateFlow()
+
+    // recent /playback-info polls with no playback = pending video; polls start ~1s before /play
+    @Volatile private var _lastVideoPollAt = 0L
+    @Volatile private var _videoPollSuppressed = false
+
+    fun videoSessionPending(): Boolean =
+        !_videoPlaybackActive.value && !_audioOnly.value && !_mirroringActive.value &&
+            !_videoPollSuppressed &&
+            SystemClock.elapsedRealtime() - _lastVideoPollAt < VIDEO_POLL_PENDING_TIMEOUT_MS
+
+    // set once mirroring reports a real size; connectionCount can't tell session kinds apart
+    private val _mirroringActive = MutableStateFlow(false)
+    val mirroringActive = _mirroringActive.asStateFlow()
 
     private val _trackInfo = MutableStateFlow(TrackInfo())
     val trackInfo = _trackInfo.asStateFlow()
@@ -124,15 +159,39 @@ class AirPlayService : Service(), RaopCallbackHandler {
         mediaSession = MediaSessionCompat(this, "AirPlay").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
+                    if (_videoPlaybackActive.value) {
+                        airPlayVideoPlayer.setPlaying(true)
+                        return
+                    }
                     _setPlaying(true)
                     dacpController?.play()
                 }
                 override fun onPause() {
+                    if (_videoPlaybackActive.value) {
+                        airPlayVideoPlayer.setPlaying(false)
+                        return
+                    }
                     _setPlaying(false)
                     dacpController?.pause()
                 }
-                override fun onSkipToNext() { dacpController?.nextItem() }
-                override fun onSkipToPrevious() { dacpController?.prevItem() }
+                override fun onStop() {
+                    if (_videoPlaybackActive.value) stopVideoPlayback()
+                }
+                override fun onFastForward() {
+                    if (_videoPlaybackActive.value) airPlayVideoPlayer.seekBy(VIDEO_SEEK_STEP_MS)
+                }
+                override fun onRewind() {
+                    if (_videoPlaybackActive.value) airPlayVideoPlayer.seekBy(-VIDEO_SEEK_STEP_MS)
+                }
+                override fun onSeekTo(pos: Long) {
+                    if (_videoPlaybackActive.value) airPlayVideoPlayer.scrub(pos / 1000f)
+                }
+                override fun onSkipToNext() {
+                    if (!_videoPlaybackActive.value) dacpController?.nextItem()
+                }
+                override fun onSkipToPrevious() {
+                    if (!_videoPlaybackActive.value) dacpController?.prevItem()
+                }
             })
         }
         mediaReceiver = object : BroadcastReceiver() {
@@ -150,6 +209,22 @@ class AirPlayService : Service(), RaopCallbackHandler {
             addAction(ACTION_PREV)
         }
         ContextCompat.registerReceiver(this, mediaReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        airPlayVideoPlayer.onVideoAspect = { _videoPlaybackAspect.value = it }
+        airPlayVideoPlayer.onEnded = { _endVideoPlayback("AirPlay Video stopped (player)") }
+        airPlayVideoPlayer.onPlaybackInfo = { position, duration, rate, ready, playWhenReady ->
+            if (nativeHandle != 0L) {
+                NativeBridge.nativeUpdatePlaybackInfo(nativeHandle, position, duration, rate, ready)
+            }
+            if (_videoPlaybackActive.value) {
+                _updateVideoPlaybackState(position, rate)
+                _videoPlaybackInfo.value = VideoPlaybackInfo(
+                    positionMs = (position * 1000).toLong(),
+                    durationMs = if (duration > 0f) (duration * 1000).toLong() else 0L,
+                    playing = playWhenReady,
+                )
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -210,6 +285,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
         audioRenderer.realtimeDecoderPriority = realtimePriority
         NativeBridge.nativeSetH265Enabled(nativeHandle, h265)
         NativeBridge.nativeSetCodecs(nativeHandle, alac, aac)
+        NativeBridge.nativeSetHlsEnabled(nativeHandle, true)
         NativeBridge.nativeSetPlist(nativeHandle, "maxFPS", maxFps)
         NativeBridge.nativeSetPlist(nativeHandle, "overscanned", if (overscanned) 1 else 0)
         if (audioLatencyMs >= 0) {
@@ -284,8 +360,14 @@ class AirPlayService : Service(), RaopCallbackHandler {
         wakeLock = null
         videoRenderer.release()
         audioRenderer.release()
+        airPlayVideoPlayer.stop()
         mediaSession?.isActive = false
         _audioOnly.value = false
+        _videoPlaybackActive.value = false
+        _mirroringActive.value = false
+        _videoPlaybackInfo.value = VideoPlaybackInfo()
+        _lastVideoPollAt = 0
+        _videoPollSuppressed = false
         _trackInfo.value = TrackInfo()
         _positionMs.value = 0
         _durationMs.value = 0
@@ -303,6 +385,34 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     fun clearVideoSurface(surface: Surface) {
         videoRenderer.clearSurface(surface)
+    }
+
+    fun setVideoPlaybackSurface(surface: Surface) {
+        airPlayVideoPlayer.setSurface(surface)
+    }
+
+    fun clearVideoPlaybackSurface(surface: Surface) {
+        airPlayVideoPlayer.clearSurface(surface)
+    }
+
+    fun setVideoPlaying(playing: Boolean) {
+        airPlayVideoPlayer.setPlaying(playing)
+    }
+
+    fun seekVideoTo(positionMs: Long) {
+        airPlayVideoPlayer.scrub(positionMs / 1000f)
+    }
+
+    fun stopVideoPlayback() = _endVideoPlayback("AirPlay Video stopped (local)")
+
+    private fun _endVideoPlayback(message: String) {
+        if (!_videoPlaybackActive.value) return
+        // lingering polls after a stop must not bounce the UI back to a pending session
+        _videoPollSuppressed = true
+        _videoPlaybackActive.value = false
+        airPlayVideoPlayer.stop()
+        if (!_audioOnly.value) mediaSession?.isActive = false
+        log(message)
     }
 
     override fun onDestroy() {
@@ -328,6 +438,32 @@ class AirPlayService : Service(), RaopCallbackHandler {
         audioRenderer.feedAudio(data, ct, ntpTimeNs)
     }
 
+    override fun onVideoSessionPoll() {
+        _lastVideoPollAt = SystemClock.elapsedRealtime()
+    }
+
+    override fun onVideoPlay(location: String, startPositionSeconds: Float) {
+        _videoPlaySeq.value++
+        _videoPollSuppressed = false
+        _videoPlaybackInfo.value = VideoPlaybackInfo(positionMs = (startPositionSeconds * 1000).toLong())
+        _videoPlaybackAspect.value = 16f / 9f
+        _videoPlaybackActive.value = true
+        airPlayVideoPlayer.play(location, startPositionSeconds)
+        // claim media-button routing for keys that arrive as media-session events
+        mediaSession?.isActive = true
+        log("AirPlay Video play: $location @ ${startPositionSeconds}s")
+    }
+
+    override fun onVideoScrub(positionSeconds: Float) {
+        airPlayVideoPlayer.scrub(positionSeconds)
+    }
+
+    override fun onVideoRate(rate: Float) {
+        airPlayVideoPlayer.setRate(rate)
+    }
+
+    override fun onVideoStop() = _endVideoPlayback("AirPlay Video stopped")
+
     override fun onAudioFormat(ct: Int, spf: Int, usingScreen: Boolean) {
         clearPin()
         if (!usingScreen && !_audioOnly.value) {
@@ -343,6 +479,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
             _videoAspect.value = w / h
             _videoResolution.value = "${w.toInt()}x${h.toInt()}"
             videoRenderer.setResolution(w.toInt(), h.toInt())
+            _mirroringActive.value = true
         }
         log("Video size: ${srcW}x${srcH} -> ${w}x${h}")
     }
@@ -366,7 +503,12 @@ class AirPlayService : Service(), RaopCallbackHandler {
     override fun onConnectionDestroy() {
         _connectionCount.value = (_connectionCount.value - 1).coerceAtLeast(0)
         if (_connectionCount.value == 0) {
+            // clients may drop without POST /stop; must run before the poll-state reset
+            _endVideoPlayback("AirPlay Video stopped (disconnect)")
             _audioOnly.value = false
+            _mirroringActive.value = false
+            _lastVideoPollAt = 0
+            _videoPollSuppressed = false
             _trackInfo.value = TrackInfo()
             _positionMs.value = 0
             _durationMs.value = 0
@@ -471,6 +613,8 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     private fun _updatePlaybackState() {
+        // the sender's silent raop audio session must not overwrite video session state
+        if (_videoPlaybackActive.value) return
         val isPlaying = _playing.value
         val pbState = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
         val speed = if (isPlaying) 1f else 0f
@@ -487,6 +631,41 @@ class AirPlayService : Service(), RaopCallbackHandler {
         mediaSession?.setPlaybackState(state)
         _updateMediaNotification()
     }
+
+    // consumers extrapolate position from (position, speed, updateTime): push only discontinuities
+    private fun _updateVideoPlaybackState(positionSeconds: Float, rate: Float) {
+        val playing = rate > 0f
+        val posMs = (positionSeconds * 1000).toLong()
+        val now = SystemClock.elapsedRealtime()
+        val expectedMs = _lastVideoStatePosMs +
+            if (_lastVideoStateRate > 0f) ((now - _lastVideoStateAtMs) * _lastVideoStateRate).toLong() else 0L
+        if (rate == _lastVideoStateRate && abs(posMs - expectedMs) < 1000) return
+        _lastVideoStateRate = rate
+        _lastVideoStatePosMs = posMs
+        _lastVideoStateAtMs = now
+        val state = PlaybackStateCompat.Builder()
+            .setActions(
+                PlaybackStateCompat.ACTION_PLAY or
+                    PlaybackStateCompat.ACTION_PAUSE or
+                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                    PlaybackStateCompat.ACTION_STOP or
+                    PlaybackStateCompat.ACTION_FAST_FORWARD or
+                    PlaybackStateCompat.ACTION_REWIND or
+                    PlaybackStateCompat.ACTION_SEEK_TO
+            )
+            .setState(
+                if (playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
+                posMs,
+                rate,
+                now
+            )
+            .build()
+        mediaSession?.setPlaybackState(state)
+    }
+
+    private var _lastVideoStateRate = -1f
+    private var _lastVideoStatePosMs = 0L
+    private var _lastVideoStateAtMs = 0L
 
     private fun clearPin() {
         _lastPin = null
@@ -639,5 +818,8 @@ class AirPlayService : Service(), RaopCallbackHandler {
         const val ACTION_NEXT = "io.github.jqssun.airplay.NEXT"
         const val ACTION_PREV = "io.github.jqssun.airplay.PREV"
         const val ACTION_START_SERVER = "io.github.jqssun.airplay.START_SERVER"
+        // single-press seek step, shared with the dpad scrub ramp's first tier
+        const val VIDEO_SEEK_STEP_MS = 5_000L
+        const val VIDEO_POLL_PENDING_TIMEOUT_MS = 3_000L
     }
 }

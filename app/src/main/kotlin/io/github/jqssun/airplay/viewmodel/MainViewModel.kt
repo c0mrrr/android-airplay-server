@@ -3,18 +3,24 @@ package io.github.jqssun.airplay.viewmodel
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.view.Surface
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import io.github.jqssun.airplay.Prefs
 import io.github.jqssun.airplay.audio.TrackInfo
 import io.github.jqssun.airplay.service.AirPlayService
 import io.github.jqssun.airplay.service.AirPlayService.ServerState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -160,6 +166,44 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _audioOnly = MutableStateFlow(false)
     val audioOnly: StateFlow<Boolean> = _audioOnly.asStateFlow()
 
+    private val _videoPlaybackActive = MutableStateFlow(false)
+    val videoPlaybackActive: StateFlow<Boolean> = _videoPlaybackActive.asStateFlow()
+
+    // video channel polling but /play not received yet
+    private val _videoSessionPending = MutableStateFlow(false)
+    val videoSessionPending: StateFlow<Boolean> = _videoSessionPending.asStateFlow()
+
+    // airplay video transport overlay state
+
+    // bumping the tick shows the overlay and restarts its auto-hide timer
+    private val _videoOverlayTick = MutableStateFlow(0L)
+    val videoOverlayTick: StateFlow<Long> = _videoOverlayTick.asStateFlow()
+
+    private val _videoPositionMs = MutableStateFlow(0L)
+    val videoPositionMs: StateFlow<Long> = _videoPositionMs.asStateFlow()
+
+    private val _videoDurationMs = MutableStateFlow(0L)
+    val videoDurationMs: StateFlow<Long> = _videoDurationMs.asStateFlow()
+
+    private val _videoPlaybackAspect = MutableStateFlow(16f / 9f)
+    val videoPlaybackAspect: StateFlow<Float> = _videoPlaybackAspect.asStateFlow()
+
+    // optimistic for instant icon feedback, re-synced from the delayed snapshot
+    private val _videoPlaying = MutableStateFlow(true)
+    val videoPlaying: StateFlow<Boolean> = _videoPlaying.asStateFlow()
+    private var _videoActionAt = 0L
+
+    // non-null while a scrub is in flight; committed once after a debounce
+    private val _videoScrubPositionMs = MutableStateFlow<Long?>(null)
+    val videoScrubPositionMs: StateFlow<Long?> = _videoScrubPositionMs.asStateFlow()
+    private var _scrubJob: Job? = null
+    private var _lastVideoPlaySeq = 0L
+    private var _scrubLastStepAt = 0L
+    private var _scrubStepsTaken = 0
+
+    private val _mirroringActive = MutableStateFlow(false)
+    val mirroringActive: StateFlow<Boolean> = _mirroringActive.asStateFlow()
+
     private val _trackInfo = MutableStateFlow(TrackInfo())
     val trackInfo: StateFlow<TrackInfo> = _trackInfo.asStateFlow()
 
@@ -215,7 +259,8 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        ctx.startActivity(Intent.createChooser(intent, "Export logs").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val chooserTitle = ctx.getString(io.github.jqssun.airplay.R.string.export_logs_chooser_title)
+        ctx.startActivity(Intent.createChooser(intent, chooserTitle).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun loadPersistedLogs() {
@@ -315,6 +360,70 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         service?.clearVideoSurface(surface)
     }
 
+    fun onVideoPlaybackSurfaceAvailable(surface: Surface) {
+        service?.setVideoPlaybackSurface(surface)
+    }
+
+    fun onVideoPlaybackSurfaceDestroyed(surface: Surface) {
+        service?.clearVideoPlaybackSurface(surface)
+    }
+
+    fun toggleVideoPlayPause() = setVideoPlaying(!_videoPlaying.value)
+
+    fun setVideoPlaying(playing: Boolean) {
+        // pending session: there is no local media yet, nothing to toggle
+        if (!_videoPlaybackActive.value) return
+        _videoPlaying.value = playing
+        _videoActionAt = SystemClock.elapsedRealtime()
+        service?.setVideoPlaying(playing)
+        showVideoOverlay()
+    }
+
+    // tap jumps one tier-0 step; holds take one throttled step per window, ramping tiers
+    fun scrubVideoBy(direction: Int, repeatCount: Int) {
+        val now = SystemClock.elapsedRealtime()
+        if (repeatCount == 0) {
+            _scrubStepsTaken = 0
+        } else if (now - _scrubLastStepAt < SCRUB_REPEAT_THROTTLE_MS) {
+            return
+        }
+        _scrubLastStepAt = now
+        val tier = (_scrubStepsTaken / SCRUB_RAMP_DWELL_STEPS).coerceAtMost(SCRUB_STEP_TIERS_MS.lastIndex)
+        val step = SCRUB_STEP_TIERS_MS[tier]
+        _scrubStepsTaken++
+        val from = _videoScrubPositionMs.value ?: _videoPositionMs.value
+        var target = (from + direction * step).coerceAtLeast(0L)
+        val duration = _videoDurationMs.value
+        if (duration > 0) target = target.coerceAtMost(duration)
+        _videoScrubPositionMs.value = target
+        showVideoOverlay()
+        _scheduleScrubCommit()
+    }
+
+    private fun _scheduleScrubCommit() {
+        _scrubJob?.cancel()
+        _scrubJob = viewModelScope.launch {
+            delay(SCRUB_COMMIT_DEBOUNCE_MS)
+            val target = _videoScrubPositionMs.value ?: return@launch
+            service?.seekVideoTo(target)
+            // hold the target until the reported position catches up (hls rebuffer)
+            val deadline = SystemClock.elapsedRealtime() + SCRUB_SETTLE_TIMEOUT_MS
+            while (SystemClock.elapsedRealtime() < deadline) {
+                delay(SCRUB_SETTLE_POLL_MS)
+                if (abs(_videoPositionMs.value - target) <= SCRUB_SETTLE_EPSILON_MS) break
+            }
+            _videoScrubPositionMs.value = null
+        }
+    }
+
+    fun showVideoOverlay() {
+        _videoOverlayTick.value++
+    }
+
+    fun stopVideoPlayback() {
+        service?.stopVideoPlayback()
+    }
+
     // dacp controls
     fun dacpPlayPause() { service?.togglePlayPause() }
     fun dacpNext() { service?.dacpController?.nextItem() }
@@ -335,6 +444,33 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
             _videoAspect.value = it.videoAspect.value
             _videoResolution.value = it.videoResolution.value
             _audioOnly.value = it.audioOnly.value
+            val videoActive = it.videoPlaybackActive.value
+            val playSeq = it.videoPlaySeq.value
+            if (playSeq != _lastVideoPlaySeq) {
+                // fresh /play (incl. back-to-back): drop stale overlay and scrub state
+                _lastVideoPlaySeq = playSeq
+                _videoPlaying.value = true
+                _videoActionAt = 0
+                _videoOverlayTick.value = 0
+                _scrubJob?.cancel()
+                _videoScrubPositionMs.value = null
+            }
+            _videoPlaybackActive.value = videoActive
+            _videoSessionPending.value = it.videoSessionPending()
+            if (videoActive) {
+                val info = it.videoPlaybackInfo.value
+                _videoPositionMs.value = info.positionMs
+                _videoDurationMs.value = info.durationMs
+                _videoPlaybackAspect.value = it.videoPlaybackAspect.value
+                // stale snapshots must not overwrite a just-made optimistic action
+                if (SystemClock.elapsedRealtime() - _videoActionAt > VIDEO_ACTION_SYNC_HOLD_MS) {
+                    _videoPlaying.value = info.playing
+                }
+            } else {
+                _videoPositionMs.value = 0
+                _videoDurationMs.value = 0
+            }
+            _mirroringActive.value = it.mirroringActive.value
             _trackInfo.value = it.trackInfo.value
             _positionMs.value = it.currentPositionMs()
             _durationMs.value = it.durationMs.value
@@ -343,5 +479,22 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
                 _debugInfo.value = it.collectDebugInfo()
             }
         }
+    }
+
+    private companion object {
+        // one accepted held-scrub step per window; also the bar's visible cadence
+        const val SCRUB_REPEAT_THROTTLE_MS = 150L
+        // first entry = single-tap jump, shared with the media-session ff/rw step
+        val SCRUB_STEP_TIERS_MS = longArrayOf(
+            AirPlayService.VIDEO_SEEK_STEP_MS, 10_000, 15_000, 20_000, 30_000, 45_000, 60_000
+        )
+        const val SCRUB_RAMP_DWELL_STEPS = 2
+        const val SCRUB_COMMIT_DEBOUNCE_MS = 400L
+        // post-commit: show the target until within epsilon, give up after the timeout
+        const val SCRUB_SETTLE_POLL_MS = 100L
+        const val SCRUB_SETTLE_EPSILON_MS = 2_000L
+        const val SCRUB_SETTLE_TIMEOUT_MS = 3_000L
+        // raise if the play/pause icon flickers back right after a local toggle
+        const val VIDEO_ACTION_SYNC_HOLD_MS = 700L
     }
 }

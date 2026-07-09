@@ -3,6 +3,9 @@ package io.github.jqssun.airplay.ui
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,6 +63,9 @@ fun MainScreen(
     val pin by viewModel.pinCode.collectAsState()
     val connections by viewModel.connectionCount.collectAsState()
     val audioOnly by viewModel.audioOnly.collectAsState()
+    val videoPlaybackActive by viewModel.videoPlaybackActive.collectAsState()
+    val videoSessionPending by viewModel.videoSessionPending.collectAsState()
+    val mirroringActive by viewModel.mirroringActive.collectAsState()
     val autoFullscreen by viewModel.autoFullscreen.collectAsState()
     val autoAudioMode by viewModel.autoAudioMode.collectAsState()
     var showModePrompt by remember { mutableStateOf(false) }
@@ -66,7 +73,7 @@ fun MainScreen(
     // don't use movableContentOf: moving AndroidView across subcomposition boundaries makes it crash on reparent
     val video: @Composable () -> Unit = {
         val aspect by viewModel.videoAspect.collectAsState()
-        MirroringView(
+        VideoSurfaceView(
             onSurfaceAvailable = onSurfaceAvailable,
             onSurfaceDestroyed = onSurfaceDestroyed,
             aspectRatio = aspect
@@ -78,23 +85,102 @@ fun MainScreen(
         if (audioOnly && !autoAudioMode) showModePrompt = true
     }
 
-    // auto fullscreen when client connects (non-audio), but never while a pin is pending
-    LaunchedEffect(connections, audioOnly, pin) {
-        if (connections > 0 && !audioOnly && autoFullscreen && !fullscreen && pin == null) {
+    // fullscreen only once mirroring reports a size: connections rise before the kind is known
+    var prevMirroringActive by remember { mutableStateOf(false) }
+    LaunchedEffect(mirroringActive, audioOnly, videoPlaybackActive, pin) {
+        val justStarted = !prevMirroringActive && mirroringActive
+        prevMirroringActive = mirroringActive
+        if (justStarted && !audioOnly && !videoPlaybackActive && autoFullscreen && pin == null) {
             fullscreen = true
         }
     }
 
+    // manual fullscreen over the idle preview is deliberate; only undo on disconnect
+    LaunchedEffect(connections) {
+        if (connections == 0) fullscreen = false
+    }
+
+    // leaving video playback must not fall through to a stale mirroring fullscreen
+    LaunchedEffect(videoPlaybackActive) {
+        if (videoPlaybackActive) fullscreen = false
+    }
+
     val activity = LocalContext.current as? Activity
-    LaunchedEffect(fullscreen) {
+    val videoScreen = videoPlaybackActive || videoSessionPending
+    LaunchedEffect(fullscreen, videoScreen) {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
-        if (fullscreen) {
+        if (fullscreen || videoScreen) {
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         } else {
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
+    }
+
+    if (videoScreen) {
+        val videoPlaybackAspect by viewModel.videoPlaybackAspect.collectAsState()
+        val playback: @Composable () -> Unit = {
+            VideoSurfaceView(
+                onSurfaceAvailable = { viewModel.onVideoPlaybackSurfaceAvailable(it) },
+                onSurfaceDestroyed = { viewModel.onVideoPlaybackSurfaceDestroyed(it) },
+                aspectRatio = videoPlaybackAspect
+            )
+        }
+        if (isInPip) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                playback()
+            }
+            return
+        }
+        val overlayTick by viewModel.videoOverlayTick.collectAsState()
+        val playing by viewModel.videoPlaying.collectAsState()
+        val positionMs by viewModel.videoPositionMs.collectAsState()
+        val durationMs by viewModel.videoDurationMs.collectAsState()
+        val scrubPositionMs by viewModel.videoScrubPositionMs.collectAsState()
+        val scrubbing = scrubPositionMs != null
+        var overlayVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(overlayTick, playing, scrubbing, videoPlaybackActive) {
+            // tick 0 = fresh session; a pending session pins the overlay
+            if (!videoPlaybackActive) {
+                overlayVisible = true
+            } else if (overlayTick == 0L) {
+                overlayVisible = false
+            } else {
+                overlayVisible = true
+                if (playing && !scrubbing) {
+                    delay(VIDEO_OVERLAY_HIDE_MS)
+                    overlayVisible = false
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { viewModel.toggleVideoPlayPause() })
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            playback()
+            androidx.compose.animation.AnimatedVisibility(
+                visible = overlayVisible,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                VideoTransportOverlay(
+                    playing = playing && videoPlaybackActive,
+                    positionMs = scrubPositionMs ?: positionMs,
+                    durationMs = durationMs
+                )
+            }
+        }
+        return
     }
 
     // pip mode: show only the video surface
@@ -218,6 +304,8 @@ private fun OverviewContent(
     val serverName by viewModel.serverName.collectAsState()
     val videoResolution by viewModel.videoResolution.collectAsState()
     val idlePreview by viewModel.idlePreview.collectAsState()
+    val mirroringActive by viewModel.mirroringActive.collectAsState()
+    val videoPlaybackActive by viewModel.videoPlaybackActive.collectAsState()
     val debugEnabled by viewModel.debugEnabled.collectAsState()
     val debugInfo by viewModel.debugInfo.collectAsState()
     val tv = isTv()
@@ -237,10 +325,12 @@ private fun OverviewContent(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
+            val connecting = state == ServerState.RUNNING && connections > 0 &&
+                !mirroringActive && !videoPlaybackActive
             if (showAudioMode && state == ServerState.RUNNING && connections > 0) {
                 NowPlayingContent(viewModel)
             } else {
-                if (state == ServerState.RUNNING && (connections > 0 || idlePreview)) {
+                if (state == ServerState.RUNNING && (mirroringActive || idlePreview)) {
                     video()
                 }
                 if (state != ServerState.RUNNING || connections == 0) {
@@ -262,8 +352,14 @@ private fun OverviewContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
+                } else if (connecting) {
+                    Text(
+                        text = stringResource(R.string.waiting_for_playback),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
                 }
-                if (state == ServerState.RUNNING && connections > 0) {
+                if (state == ServerState.RUNNING && mirroringActive) {
                     Row(modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
                         IconButton(onClick = onPip, modifier = Modifier.dpadFocus()) {
                             Icon(
@@ -434,6 +530,68 @@ private fun FullscreenVideo(
     }
 }
 
+// while scrubbing, positionMs is the pending scrub target, not the live position
+@Composable
+private fun VideoTransportOverlay(
+    playing: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                )
+            )
+            .padding(horizontal = 40.dp)
+            .padding(top = 48.dp, bottom = 28.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+            contentDescription = stringResource(R.string.cd_play_pause),
+            tint = Color.White,
+            modifier = Modifier.size(36.dp)
+        )
+        Spacer(Modifier.width(20.dp))
+        // duration 0 = not yet known, or a live stream: no meaningful bar to draw
+        if (durationMs > 0) {
+            // glide between updates so held-key scrubbing reads as one sweep
+            val barFraction by animateFloatAsState(
+                targetValue = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f),
+                animationSpec = tween(durationMillis = 150, easing = LinearEasing),
+                label = "videoSeekBar"
+            )
+            LinearProgressIndicator(
+                progress = { barFraction },
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.3f),
+                drawStopIndicator = {},
+                modifier = Modifier
+                    .weight(1f)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+            )
+            Spacer(Modifier.width(20.dp))
+            Text(
+                text = "${_formatTime(positionMs)} / ${_formatTime(durationMs)}",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = _formatTime(positionMs),
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
+            )
+        }
+    }
+}
+
 @Composable
 private fun NowPlayingContent(viewModel: MainViewModel) {
     val track by viewModel.trackInfo.collectAsState()
@@ -549,9 +707,12 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
     }
 }
 
+private const val VIDEO_OVERLAY_HIDE_MS = 3000L
+
 private fun _formatTime(ms: Long): String {
     val s = (ms / 1000).toInt()
-    return "%d:%02d".format(s / 60, s % 60)
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+    else "%d:%02d".format(s / 60, s % 60)
 }
 
 @Composable
@@ -566,14 +727,14 @@ private fun DebugOverlay(info: DebugInfo, modifier: Modifier = Modifier) {
         val color = Color.White.copy(alpha = 0.9f)
 
         if (info.videoCodec.isNotEmpty()) {
-            Text("Video: ${info.videoCodec} ${info.videoRes}", style = style, color = color)
-            Text("FPS: ${info.videoFps}  Bitrate: ${info.bitrateStr}", style = style, color = color)
-            Text("Frames: ${info.videoFrames}  Drops: ${info.droppedFrames}", style = style, color = color)
-            Text("Jitter: ${info.jitterStr}", style = style, color = color)
+            Text(stringResource(R.string.debug_video, info.videoCodec, info.videoRes), style = style, color = color)
+            Text(stringResource(R.string.debug_fps_bitrate, info.videoFps, info.bitrateStr), style = style, color = color)
+            Text(stringResource(R.string.debug_frames_drops, info.videoFrames, info.droppedFrames), style = style, color = color)
+            Text(stringResource(R.string.debug_jitter, info.jitterStr), style = style, color = color)
         }
         if (info.audioCodec.isNotEmpty()) {
-            Text("Audio: ${info.audioCodec}  Vol: ${info.audioVolume}%", style = style, color = color)
+            Text(stringResource(R.string.debug_audio, info.audioCodec, info.audioVolume), style = style, color = color)
         }
-        Text("Clients: ${info.connections}", style = style, color = color)
+        Text(stringResource(R.string.debug_clients, info.connections), style = style, color = color)
     }
 }

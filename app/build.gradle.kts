@@ -32,8 +32,8 @@ android {
         applicationId = "io.github.jqssun.airplay"
         minSdk = 24
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.0.16"
+        versionCode = 17
+        versionName = "0.0.17"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -80,6 +80,27 @@ android {
     }
 }
 
+tasks.register("applyUxplayPatches") {
+    doLast {
+        fun git(vararg args: String): String {
+            val proc = ProcessBuilder("git", "-C", "$projectDir/src/main/cpp/third_party/UxPlay", *args)
+                .redirectErrorStream(true).start()
+            val out = proc.inputStream.bufferedReader().readText()
+            check(proc.waitFor() == 0) { "git ${args.joinToString(" ")} failed:\n$out" }
+            return out
+        }
+        val patches = file("src/main/cpp/patches/UxPlay").listFiles { f -> f.extension == "patch" }!!.sorted()
+        val touched = patches.flatMap { git("apply", "--numstat", it.path).trim().lines() }
+            .map { it.substringAfterLast("\t") }.distinct()
+        git("checkout", "--", *touched.toTypedArray())
+        patches.forEach { git("apply", it.path) }
+    }
+}
+
+tasks.configureEach {
+    if (name.startsWith("configureCMake")) dependsOn("applyUxplayPatches")
+}
+
 tasks.withType<Zip>().configureEach {
     isReproducibleFileOrder = true
     isPreserveFileTimestamps = false
@@ -92,6 +113,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.datastore.prefs)
     implementation(libs.androidx.media)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
     implementation(libs.kotlinx.coroutines)
 
     implementation(platform(libs.compose.bom))

@@ -10,8 +10,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 
+// shared surface for mirroring (VideoRenderer) and airplay video (AirPlayVideoPlayer)
 @Composable
-fun MirroringView(
+fun VideoSurfaceView(
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: (Surface) -> Unit,
     aspectRatio: Float = 16f / 9f,

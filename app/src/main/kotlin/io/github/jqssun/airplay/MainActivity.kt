@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Rational
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -105,9 +106,63 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // nothing in the video screen takes focus, so dispatchKeyEvent is the interception point
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (service?.videoPlaybackActive?.value == true && _handleVideoKeyEvent(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun _handleVideoKeyEvent(event: KeyEvent): Boolean {
+        val handled = when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_STOP,
+            KeyEvent.KEYCODE_BACK -> true
+            else -> false
+        }
+        if (!handled) return false
+        // consume matching UP events too so they can't leak into the UI underneath
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER ->
+                if (event.repeatCount == 0) viewModel.toggleVideoPlayPause()
+            KeyEvent.KEYCODE_MEDIA_PLAY ->
+                if (event.repeatCount == 0) viewModel.setVideoPlaying(true)
+            KeyEvent.KEYCODE_MEDIA_PAUSE ->
+                if (event.repeatCount == 0) viewModel.setVideoPlaying(false)
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_MEDIA_REWIND ->
+                viewModel.scrubVideoBy(-1, event.repeatCount)
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD ->
+                viewModel.scrubVideoBy(1, event.repeatCount)
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN ->
+                if (event.repeatCount == 0) viewModel.showVideoOverlay()
+            KeyEvent.KEYCODE_MEDIA_STOP,
+            KeyEvent.KEYCODE_BACK ->
+                if (event.repeatCount == 0) viewModel.stopVideoPlayback()
+        }
+        return true
+    }
+
     fun enterPip() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val aspect = viewModel.videoAspect.value
+        val aspect = if (viewModel.videoPlaybackActive.value) viewModel.videoPlaybackAspect.value
+            else viewModel.videoAspect.value
         val rational = Rational(
             (aspect * 1000).toInt().coerceIn(1, 2390),
             1000.coerceIn(1, 2390)

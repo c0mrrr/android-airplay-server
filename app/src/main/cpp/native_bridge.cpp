@@ -68,6 +68,7 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeInit(
         free(ctx);
         return 0;
     }
+    ctx->cb_ctx.raop = ctx->raop;
 
     raop_set_log_level(ctx->raop, 3); /* INFO */
     raop_set_log_callback(ctx->raop, _log_callback, NULL);
@@ -128,6 +129,9 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeStart(
         LOGE("raop_start_httpd failed: %d", ret);
         return -1;
     }
+    /* raop_start_httpd doesn't record the bound port; without this the hls
+       proxy urls are built with port 0 */
+    raop_set_port(ctx->raop, port);
 
     LOGI("AirPlay server started on port %d", port);
 
@@ -287,6 +291,21 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetH265Enabled(
     }
 }
 
+/* hls plist gates raop.c's hls support; feature bits 0/4 advertise it over dns-sd */
+extern "C"
+JNIEXPORT void JNICALL
+Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetHlsEnabled(
+        JNIEnv *env, jobject thiz, jlong handle, jboolean enabled) {
+
+    server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
+    if (!ctx || !ctx->raop) return;
+    raop_set_plist(ctx->raop, "hls", enabled ? 1 : 0);
+    if (ctx->dnssd) {
+        dnssd_set_airplay_features(ctx->dnssd, 0, enabled ? 1 : 0);
+        dnssd_set_airplay_features(ctx->dnssd, 4, enabled ? 1 : 0);
+    }
+}
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetCodecs(
@@ -295,6 +314,17 @@ Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeSetCodecs(
     server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
     if (!ctx || !ctx->dnssd) return;
     android_dnssd_set_codecs(ctx->dnssd, alac ? 1 : 0, aac ? 1 : 0);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_io_github_jqssun_airplay_bridge_NativeBridge_nativeUpdatePlaybackInfo(
+        JNIEnv *env, jobject thiz, jlong handle,
+        jfloat position, jfloat duration, jfloat rate, jboolean readyToPlay) {
+
+    server_ctx_t *ctx = (server_ctx_t *)(intptr_t)handle;
+    if (!ctx) return;
+    android_callbacks_update_playback_info(&ctx->cb_ctx, position, duration, rate, readyToPlay ? 1 : 0);
 }
 
 /* ---------- Software ALAC decoder (Apple reference, Apache 2.0) ---------- */
