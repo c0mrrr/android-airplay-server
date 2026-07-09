@@ -256,3 +256,22 @@ index f49e62c..8a3f192 100644
  }
  
  /* the HLS handler handles http requests GET /[uri] on the HLS channel from the media player to the Server, asking for
+diff --git a/lib/raop_handlers.h b/lib/raop_handlers.h
+index 1aeba28..14821da 100644
+--- a/lib/raop_handlers.h
++++ b/lib/raop_handlers.h
+@@ -468,12 +468,8 @@ raop_handler_pairverify(raop_conn_t *conn,
+     raop_t *raop = conn->raop;
+     bool register_check = false;  
+     if (pairing_session_check_handshake_status(conn->session)) {
+-        if (raop->use_pin) {
+-            pairing_session_set_setup_status(conn->session);
+-            register_check = true;
+-        } else {
+-            return;
+-        }
++        pairing_session_set_setup_status(conn->session);
++        register_check = raop->use_pin;
+     }
+     unsigned char public_key[X25519_KEY_SIZE];
+     unsigned char signature[PAIRING_SIG_SIZE];

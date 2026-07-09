@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 
@@ -39,6 +40,10 @@ class AirPlayVideoPlayer(private val context: Context) {
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_ENDED) onEnded?.invoke()
         }
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            // duration is usually established here (esp. hls): report so the held /play releases
+            _reportPlaybackInfo()
+        }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.height == 0) return
             onVideoAspect?.invoke(videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height)
@@ -56,7 +61,6 @@ class AirPlayVideoPlayer(private val context: Context) {
         p.setMediaItem(MediaItem.fromUri(location), (startPositionSeconds * 1000).toLong())
         p.playWhenReady = true
         p.prepare()
-        // a stop queued before this ran may have stamped the sentinel; re-arm the snapshot
         onPlaybackInfo?.invoke(startPositionSeconds, 0f, 0f, false, true)
         mainHandler.postDelayed(_reportTick, REPORT_INTERVAL_MS)
     }
@@ -121,10 +125,12 @@ class AirPlayVideoPlayer(private val context: Context) {
         val p = player ?: return
         val durationMs = p.duration
         val position = p.currentPosition / 1000f
-        // 0 = unknown/live; a real value only exists for vod
+        // 0 = live/unknown (TIME_UNSET); a real value only exists for vod
         val duration = if (durationMs == C.TIME_UNSET) 0f else durationMs / 1000f
         val rate = if (p.playWhenReady && p.playbackState == Player.STATE_READY) p.playbackParameters.speed else 0f
-        val ready = p.playbackState == Player.STATE_READY
+        // readyToPlay = the timeline is established, NOT exoplayer's buffering state: for vod that means the duration is known; for live there is no duration so being playable is enough. the sender holds its timeline (and /play) until this, so it must not go true early
+        val ready = if (p.isCurrentMediaItemLive) p.playbackState == Player.STATE_READY
+                    else durationMs != C.TIME_UNSET
         onPlaybackInfo?.invoke(position, duration, rate, ready, p.playWhenReady)
     }
 

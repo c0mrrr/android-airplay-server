@@ -42,6 +42,10 @@ typedef struct {
     double playback_duration;
     float playback_rate;
     int playback_ready;
+    /* holds the /play response until the player is ready, so self-driven senders (macOS)
+       establish their timeline after the real duration is known, not at duration 0 */
+    pthread_cond_t play_ready_cond;
+    int play_ready;
 } android_callback_ctx_t;
 
 void android_callbacks_init(android_callback_ctx_t *ctx, JNIEnv *env, jobject callback_obj);
