@@ -132,6 +132,16 @@ class MainActivity : ComponentActivity() {
         isInPip.value = inPip
     }
 
+    override fun onStop() {
+        super.onStop()
+        // never stop mid-session
+        if (!viewModel.runInBackground.value && !isChangingConfigurations &&
+            viewModel.serverState.value == AirPlayService.ServerState.RUNNING &&
+            viewModel.connectionCount.value == 0) {
+            viewModel.stopServer()
+        }
+    }
+
     override fun onDestroy() {
         service?.let {
             if (it.logCallback === logCallback) it.logCallback = null

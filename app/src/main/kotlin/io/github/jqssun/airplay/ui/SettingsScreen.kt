@@ -50,6 +50,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val allowNewConn by viewModel.allowNewConn.collectAsState()
     val autoStart by viewModel.autoStart.collectAsState()
     val bootAutoStart by viewModel.bootAutoStart.collectAsState()
+    val runInBackground by viewModel.runInBackground.collectAsState()
     val serverPort by viewModel.serverPort.collectAsState()
     val audioLatencyMs by viewModel.audioLatencyMs.collectAsState()
     val swAlacEnabled by viewModel.swAlacEnabled.collectAsState()
@@ -115,17 +116,17 @@ fun SettingsScreen(viewModel: MainViewModel) {
         )
 
         SettingSwitch(
-            title = stringResource(R.string.setting_auto_start),
-            description = stringResource(R.string.setting_auto_start_desc),
-            checked = autoStart,
-            onCheckedChange = { viewModel.setAutoStart(it) }
-        )
-
-        SettingSwitch(
             title = stringResource(R.string.setting_boot_auto_start),
             description = stringResource(R.string.setting_boot_auto_start_desc),
             checked = bootAutoStart,
             onCheckedChange = { viewModel.setBootAutoStart(it) }
+        )
+
+        SettingSwitch(
+            title = stringResource(R.string.setting_run_in_background),
+            description = stringResource(R.string.setting_run_in_background_desc),
+            checked = runInBackground,
+            onCheckedChange = { viewModel.setRunInBackground(it) }
         )
 
         SectionHeader(stringResource(R.string.section_connection))
@@ -176,13 +177,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             trailingContent = {
                 Switch(checked = launchOnConnect, onCheckedChange = null)
             }
-        )
-
-        SettingSwitch(
-            title = stringResource(R.string.setting_keep_screen_on),
-            description = stringResource(R.string.setting_keep_screen_on_desc),
-            checked = keepScreenOn,
-            onCheckedChange = { viewModel.setKeepScreenOn(it) }
         )
 
         SectionHeader(stringResource(R.string.section_display))
@@ -263,6 +257,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
         )
 
         if (developerOptions) {
+            SettingSwitch(
+                title = stringResource(R.string.setting_auto_start),
+                description = stringResource(R.string.setting_auto_start_desc),
+                checked = autoStart,
+                onCheckedChange = { viewModel.setAutoStart(it) }
+            )
+
+            SettingSwitch(
+                title = stringResource(R.string.setting_keep_screen_on),
+                description = stringResource(R.string.setting_keep_screen_on_desc),
+                checked = keepScreenOn,
+                onCheckedChange = { viewModel.setKeepScreenOn(it) }
+            )
+
             SettingSwitch(
                 title = stringResource(R.string.setting_advertise_video),
                 description = stringResource(R.string.setting_advertise_video_desc),
