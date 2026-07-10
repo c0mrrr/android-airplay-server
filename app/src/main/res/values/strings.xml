@@ -62,8 +62,6 @@
 
     <!-- Dialogs -->
     <string name="dialog_pin_title">AirPlay PIN</string>
-    <string name="dialog_audio_mode_title">Audio Mode</string>
-    <string name="dialog_audio_mode_text">Switching to Audio mode for track information and playback controls.</string>
     <string name="btn_ok">OK</string>
 
     <!-- Logs screen -->
@@ -80,9 +78,7 @@
 
     <!-- Settings: Server -->
     <string name="setting_server_name">Server name</string>
-    <string name="setting_server_name_desc">Name shown to AirPlay clients</string>
     <string name="setting_server_port">Server port</string>
-    <string name="setting_server_port_desc">Port for the AirPlay server</string>
     <string name="setting_auto_start">Start server automatically</string>
     <string name="setting_auto_start_desc">Start the AirPlay server when the app launches</string>
     <string name="setting_boot_auto_start">Start server at boot</string>
@@ -102,8 +98,10 @@
     <string name="setting_auto_fullscreen_desc">Enter fullscreen when a client connects</string>
     <string name="setting_keep_screen_on">Keep screen on</string>
     <string name="setting_keep_screen_on_desc">Prevent screen from sleeping while a client is connected</string>
-    <string name="setting_auto_audio_mode">Enter audio mode automatically</string>
-    <string name="setting_auto_audio_mode_desc">Skip the prompt when switching to audio mode</string>
+    <string name="setting_advertise_video">Advertise AirPlay video support</string>
+    <string name="setting_advertise_video_desc">When off, videos are cast as audio only streams</string>
+    <string name="setting_advertise_audio">Advertise AirPlay audio support</string>
+    <string name="setting_advertise_audio_desc">When off, the device can only be used for mirroring and will be hidden from media players</string>
     <string name="setting_launch_on_connect">Open this application on connect</string>
     <string name="setting_launch_on_connect_desc">Show the screen when a client connects</string>
     <string name="setting_launch_on_connect_no_permission">Tap to grant Display over other apps permission</string>

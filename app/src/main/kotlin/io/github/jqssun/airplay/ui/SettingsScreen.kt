@@ -41,7 +41,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val idlePreview by viewModel.idlePreview.collectAsState()
     val autoFullscreen by viewModel.autoFullscreen.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState()
-    val autoAudioMode by viewModel.autoAudioMode.collectAsState()
+    val advertiseVideo by viewModel.advertiseVideo.collectAsState()
+    val advertiseAudio by viewModel.advertiseAudio.collectAsState()
     val launchOnConnect by viewModel.launchOnConnect.collectAsState()
     val maxFps by viewModel.maxFps.collectAsState()
     val overscanned by viewModel.overscanned.collectAsState()
@@ -74,7 +75,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             value = nameText,
             onValueChange = { nameText = it },
             label = { Text(stringResource(R.string.setting_server_name)) },
-            supportingText = { Text(stringResource(R.string.setting_server_name_desc)) },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
@@ -95,7 +95,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             value = portText,
             onValueChange = { portText = it.filter { c -> c.isDigit() }.take(5) },
             label = { Text(stringResource(R.string.setting_server_port)) },
-            supportingText = { Text(stringResource(R.string.setting_server_port_desc)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
@@ -145,36 +144,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onCheckedChange = { viewModel.setAllowNewConn(it) }
         )
 
-        SectionHeader(stringResource(R.string.section_display))
-
-        SettingSwitch(
-            title = stringResource(R.string.setting_idle_preview),
-            description = stringResource(R.string.setting_idle_preview_desc),
-            checked = idlePreview,
-            onCheckedChange = { viewModel.setIdlePreview(it) }
-        )
-
-        SettingSwitch(
-            title = stringResource(R.string.setting_auto_fullscreen),
-            description = stringResource(R.string.setting_auto_fullscreen_desc),
-            checked = autoFullscreen,
-            onCheckedChange = { viewModel.setAutoFullscreen(it) }
-        )
-
-        SettingSwitch(
-            title = stringResource(R.string.setting_keep_screen_on),
-            description = stringResource(R.string.setting_keep_screen_on_desc),
-            checked = keepScreenOn,
-            onCheckedChange = { viewModel.setKeepScreenOn(it) }
-        )
-
-        SettingSwitch(
-            title = stringResource(R.string.setting_auto_audio_mode),
-            description = stringResource(R.string.setting_auto_audio_mode_desc),
-            checked = autoAudioMode,
-            onCheckedChange = { viewModel.setAutoAudioMode(it) }
-        )
-
         val ctx = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
         var hasOverlayPermission by remember { mutableStateOf(canAutoLaunch(ctx)) }
@@ -207,6 +176,29 @@ fun SettingsScreen(viewModel: MainViewModel) {
             trailingContent = {
                 Switch(checked = launchOnConnect, onCheckedChange = null)
             }
+        )
+
+        SettingSwitch(
+            title = stringResource(R.string.setting_keep_screen_on),
+            description = stringResource(R.string.setting_keep_screen_on_desc),
+            checked = keepScreenOn,
+            onCheckedChange = { viewModel.setKeepScreenOn(it) }
+        )
+
+        SectionHeader(stringResource(R.string.section_display))
+
+        SettingSwitch(
+            title = stringResource(R.string.setting_idle_preview),
+            description = stringResource(R.string.setting_idle_preview_desc),
+            checked = idlePreview,
+            onCheckedChange = { viewModel.setIdlePreview(it) }
+        )
+
+        SettingSwitch(
+            title = stringResource(R.string.setting_auto_fullscreen),
+            description = stringResource(R.string.setting_auto_fullscreen_desc),
+            checked = autoFullscreen,
+            onCheckedChange = { viewModel.setAutoFullscreen(it) }
         )
 
         SettingResolution(
@@ -271,6 +263,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
         )
 
         if (developerOptions) {
+            SettingSwitch(
+                title = stringResource(R.string.setting_advertise_video),
+                description = stringResource(R.string.setting_advertise_video_desc),
+                checked = advertiseVideo,
+                onCheckedChange = { viewModel.setAdvertiseVideo(it) }
+            )
+
+            SettingSwitch(
+                title = stringResource(R.string.setting_advertise_audio),
+                description = stringResource(R.string.setting_advertise_audio_desc),
+                checked = advertiseAudio,
+                onCheckedChange = { viewModel.setAdvertiseAudio(it) }
+            )
+
             SettingSwitch(
                 title = stringResource(R.string.setting_key_allow_frame_drop),
                 description = stringResource(R.string.setting_key_allow_frame_drop_desc),

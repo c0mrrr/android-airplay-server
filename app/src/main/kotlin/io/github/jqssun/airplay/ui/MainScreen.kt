@@ -86,8 +86,6 @@ fun MainScreen(
     val videoSessionPending by viewModel.videoSessionPending.collectAsState()
     val mirroringActive by viewModel.mirroringActive.collectAsState()
     val autoFullscreen by viewModel.autoFullscreen.collectAsState()
-    val autoAudioMode by viewModel.autoAudioMode.collectAsState()
-    var showModePrompt by remember { mutableStateOf(false) }
 
     // don't use movableContentOf: moving AndroidView across subcomposition boundaries makes it crash on reparent
     val video: @Composable () -> Unit = {
@@ -97,11 +95,6 @@ fun MainScreen(
             onSurfaceDestroyed = onSurfaceDestroyed,
             aspectRatio = aspect
         )
-    }
-
-    // auto audio mode: skip prompt if preference is on
-    LaunchedEffect(audioOnly) {
-        if (audioOnly && !autoAudioMode) showModePrompt = true
     }
 
     // fullscreen only once mirroring reports a size: connections rise before the kind is known
@@ -547,17 +540,6 @@ fun MainScreen(
         )
     }
 
-    // audio mode notification
-    if (showModePrompt) {
-        AlertDialog(
-            onDismissRequest = { showModePrompt = false },
-            title = { Text(stringResource(R.string.dialog_audio_mode_title)) },
-            text = { Text(stringResource(R.string.dialog_audio_mode_text)) },
-            confirmButton = {
-                TextButton(onClick = { showModePrompt = false }) { Text(stringResource(R.string.btn_ok)) }
-            }
-        )
-    }
 }
 
 @Composable
