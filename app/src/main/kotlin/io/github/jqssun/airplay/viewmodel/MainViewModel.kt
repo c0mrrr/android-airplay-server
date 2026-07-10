@@ -193,6 +193,10 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     val videoPlaying: StateFlow<Boolean> = _videoPlaying.asStateFlow()
     private var _videoActionAt = 0L
 
+    // null = idle, -1 = unknown, else 0..100
+    private val _videoDownloadProgress = MutableStateFlow<Int?>(null)
+    val videoDownloadProgress: StateFlow<Int?> = _videoDownloadProgress.asStateFlow()
+
     // non-null while a scrub is in flight; committed once after a debounce
     private val _videoScrubPositionMs = MutableStateFlow<Long?>(null)
     val videoScrubPositionMs: StateFlow<Long?> = _videoScrubPositionMs.asStateFlow()
@@ -424,6 +428,12 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         service?.stopVideoPlayback()
     }
 
+    fun toggleVideoDownload() {
+        val svc = service ?: return
+        if (_videoDownloadProgress.value != null) svc.videoDownloader.cancel() else svc.downloadVideo()
+        showVideoOverlay()
+    }
+
     // dacp controls
     fun dacpPlayPause() { service?.togglePlayPause() }
     fun dacpNext() { service?.dacpController?.nextItem() }
@@ -457,6 +467,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
             }
             _videoPlaybackActive.value = videoActive
             _videoSessionPending.value = it.videoSessionPending()
+            _videoDownloadProgress.value = it.videoDownloader.progress.value
             if (videoActive) {
                 val info = it.videoPlaybackInfo.value
                 _videoPositionMs.value = info.positionMs

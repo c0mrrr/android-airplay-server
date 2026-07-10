@@ -36,6 +36,7 @@ import io.github.jqssun.airplay.audio.TrackInfo
 import io.github.jqssun.airplay.bridge.NativeBridge
 import io.github.jqssun.airplay.bridge.RaopCallbackHandler
 import io.github.jqssun.airplay.discovery.NsdServiceManager
+import io.github.jqssun.airplay.download.VideoDownloader
 import io.github.jqssun.airplay.renderer.AirPlayVideoPlayer
 import io.github.jqssun.airplay.renderer.AudioRenderer
 import io.github.jqssun.airplay.renderer.VideoRenderer
@@ -61,6 +62,8 @@ class AirPlayService : Service(), RaopCallbackHandler {
     val videoRenderer = VideoRenderer()
     val audioRenderer = AudioRenderer()
     val airPlayVideoPlayer by lazy { AirPlayVideoPlayer(this) }
+    val videoDownloader by lazy { VideoDownloader(this) }
+    @Volatile private var _videoLocation: String? = null
 
     private val _serverState = MutableStateFlow(ServerState.STOPPED)
     val serverState = _serverState.asStateFlow()
@@ -405,6 +408,11 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     fun stopVideoPlayback() = _endVideoPlayback("AirPlay Video stopped (local)")
 
+    // hls urls point at the native httpd, valid only while the session lives
+    fun downloadVideo() {
+        _videoLocation?.let { videoDownloader.start(it) }
+    }
+
     private fun _endVideoPlayback(message: String) {
         if (!_videoPlaybackActive.value) return
         // lingering polls after a stop must not bounce the UI back to a pending session
@@ -443,6 +451,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     override fun onVideoPlay(location: String, startPositionSeconds: Float) {
+        _videoLocation = location
         _videoPlaySeq.value++
         _videoPollSuppressed = false
         _videoPlaybackInfo.value = VideoPlaybackInfo(positionMs = (startPositionSeconds * 1000).toLong())

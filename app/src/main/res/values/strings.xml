@@ -18,7 +18,7 @@
     <!-- Overview -->
     <string name="server_stopped">Server stopped</string>
     <string name="waiting_for_connection">Waiting for connection...</string>
-    <string name="waiting_for_playback">Waiting for playback to start...</string>
+    <string name="waiting_for_playback">Please start playing on the sender...</string>
     <string name="error_starting_server">Error starting server</string>
     <string name="connected_count">%d connected</string>
     <string name="error_label">Error</string>
@@ -35,6 +35,12 @@
     <string name="cd_previous">Previous</string>
     <string name="cd_play_pause">Play/Pause</string>
     <string name="cd_next">Next</string>
+    <string name="cd_download">Download video</string>
+    <string name="cd_cancel_download">Cancel download</string>
+
+    <!-- Video download -->
+    <string name="download_saved">Saved to %1$s</string>
+    <string name="download_failed">Download failed</string>
 
     <!-- Dialogs -->
     <string name="dialog_pin_title">AirPlay PIN</string>

@@ -32,8 +32,8 @@ android {
         applicationId = "io.github.jqssun.airplay"
         minSdk = 24
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.0.18"
+        versionCode = 19
+        versionName = "0.0.19"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.androidx.media)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.transformer)
     implementation(libs.kotlinx.coroutines)
 
     implementation(platform(libs.compose.bom))

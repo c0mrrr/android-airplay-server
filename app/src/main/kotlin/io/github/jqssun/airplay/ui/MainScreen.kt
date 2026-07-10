@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -141,17 +143,19 @@ fun MainScreen(
         val positionMs by viewModel.videoPositionMs.collectAsState()
         val durationMs by viewModel.videoDurationMs.collectAsState()
         val scrubPositionMs by viewModel.videoScrubPositionMs.collectAsState()
+        val downloadProgress by viewModel.videoDownloadProgress.collectAsState()
         val scrubbing = scrubPositionMs != null
+        val downloading = downloadProgress != null
         var overlayVisible by remember { mutableStateOf(false) }
-        LaunchedEffect(overlayTick, playing, scrubbing, videoPlaybackActive) {
-            // tick 0 = fresh session; a pending session pins the overlay
+        LaunchedEffect(overlayTick, playing, scrubbing, downloading, videoPlaybackActive) {
+            // tick 0 = fresh session; a pending session or a running download pins the overlay
             if (!videoPlaybackActive) {
                 overlayVisible = true
             } else if (overlayTick == 0L) {
                 overlayVisible = false
             } else {
                 overlayVisible = true
-                if (playing && !scrubbing) {
+                if (playing && !scrubbing && !downloading) {
                     delay(VIDEO_OVERLAY_HIDE_MS)
                     overlayVisible = false
                 }
@@ -162,7 +166,10 @@ fun MainScreen(
                 .fillMaxSize()
                 .background(Color.Black)
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { viewModel.toggleVideoPlayPause() })
+                    detectTapGestures(onTap = {
+                        if (overlayVisible) viewModel.toggleVideoPlayPause()
+                        else viewModel.showVideoOverlay()
+                    })
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -176,7 +183,9 @@ fun MainScreen(
                 VideoTransportOverlay(
                     playing = playing && videoPlaybackActive,
                     positionMs = scrubPositionMs ?: positionMs,
-                    durationMs = durationMs
+                    durationMs = durationMs,
+                    downloadProgress = downloadProgress,
+                    onDownload = { viewModel.toggleVideoDownload() }
                 )
             }
         }
@@ -536,6 +545,8 @@ private fun VideoTransportOverlay(
     playing: Boolean,
     positionMs: Long,
     durationMs: Long,
+    downloadProgress: Int?,
+    onDownload: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -581,6 +592,34 @@ private fun VideoTransportOverlay(
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White
             )
+            Spacer(Modifier.width(12.dp))
+            val cancelCd = stringResource(R.string.cd_cancel_download)
+            IconButton(
+                onClick = onDownload,
+                modifier = if (downloadProgress != null) {
+                    Modifier.semantics { contentDescription = cancelCd }
+                } else Modifier
+            ) {
+                when {
+                    downloadProgress == null -> Icon(
+                        Icons.Default.Download,
+                        contentDescription = stringResource(R.string.cd_download),
+                        tint = Color.White
+                    )
+                    downloadProgress < 0 -> CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    else -> CircularProgressIndicator(
+                        progress = { downloadProgress / 100f },
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.3f),
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         } else {
             Spacer(Modifier.weight(1f))
             Text(

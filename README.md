@@ -22,9 +22,9 @@ A fully featured free and open-source implementation of AirPlay for Android that
 ## Features
 
 - Screen mirroring with H.264 and H.265 (HEVC) video decoding
-- Video streaming with support for live streams and remote playback controls
 - Audio streaming with AAC-ELD, AAC-LC and ALAC audio decoding
-- Music streaming with track information, cover art, and remote playback controls
+- Video playback with support for HLS, downloads, and remote controls
+- Music playback with track information, cover art, and remote controls
 - Support for Android TV with directional pad navigation and seeking controls
 - Support for Picture-in-Picture, automatic resolution and mode switching
 - Optional PIN authentication
