@@ -307,46 +307,65 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     }
 
     // settings setters
-    fun setServerPort(port: Int) { _serverPort.value = port; prefs.edit().putInt(Prefs.SERVER_PORT, port).apply() }
-    fun setServerName(name: String) { _serverName.value = name; prefs.edit().putString(Prefs.SERVER_NAME, name).apply() }
+    private var _restartJob: Job? = null
+
+    private fun _applyByServerRestart() {
+        _restartJob?.cancel()
+        _restartJob = viewModelScope.launch {
+            delay(SERVER_RESTART_DEBOUNCE_MS)
+            val svc = service ?: return@launch
+            if (svc.serverState.value == ServerState.RUNNING) {
+                svc.stopServer()
+                svc.startServer(_serverName.value)
+            }
+        }
+    }
+
+    fun setServerPort(port: Int) { _serverPort.value = port; prefs.edit().putInt(Prefs.SERVER_PORT, port).apply(); _applyByServerRestart() }
+    fun setServerName(name: String) { _serverName.value = name; prefs.edit().putString(Prefs.SERVER_NAME, name).apply(); _applyByServerRestart() }
     fun setAutoStart(v: Boolean) { _autoStart.value = v; prefs.edit().putBoolean(Prefs.AUTO_START, v).apply() }
     fun setBootAutoStart(v: Boolean) { _bootAutoStart.value = v; prefs.edit().putBoolean(Prefs.BOOT_AUTO_START, v).apply() }
-    fun setH265Enabled(v: Boolean) { _h265Enabled.value = v; prefs.edit().putBoolean(Prefs.H265_ENABLED, v).apply() }
-    fun setEnforceSdr(v: Boolean) { _enforceSdr.value = v; prefs.edit().putBoolean(Prefs.ENFORCE_SDR, v).apply() }
+    fun setH265Enabled(v: Boolean) { _h265Enabled.value = v; prefs.edit().putBoolean(Prefs.H265_ENABLED, v).apply(); _applyByServerRestart() }
+    fun setEnforceSdr(v: Boolean) { _enforceSdr.value = v; prefs.edit().putBoolean(Prefs.ENFORCE_SDR, v).apply(); _applyByServerRestart() }
     fun setKeyAllowFrameDrop(v: Boolean) {
         _keyAllowFrameDrop.value = v
         prefs.edit().putBoolean(Prefs.KEY_ALLOW_FRAME_DROP, v).apply()
+        _applyByServerRestart()
     }
     fun setRealtimeDecoderPriority(v: Boolean) {
         _realtimeDecoderPriority.value = v
         prefs.edit().putBoolean(Prefs.KEY_PRIORITY, v).apply()
+        _applyByServerRestart()
     }
     fun setOperatingRateHint(v: Boolean) {
         _operatingRateHint.value = v
         prefs.edit().putBoolean(Prefs.KEY_OPERATING_RATE, v).apply()
+        _applyByServerRestart()
     }
     fun setScheduledOutputBufferRelease(v: Boolean) {
         _scheduledOutputBufferRelease.value = v
         prefs.edit().putBoolean(Prefs.SCHEDULED_OUTPUT_BUFFER_RELEASE, v).apply()
+        _applyByServerRestart()
     }
     fun setBenchmarkLog(v: Boolean) {
         _benchmarkLog.value = v
         prefs.edit().putBoolean(Prefs.BENCHMARK_LOG, v).apply()
+        _applyByServerRestart()
     }
-    fun setSwAlacEnabled(v: Boolean) { _swAlacEnabled.value = v; prefs.edit().putBoolean(Prefs.SW_ALAC_ENABLED, v).apply() }
-    fun setAlacEnabled(v: Boolean) { _alacEnabled.value = v; prefs.edit().putBoolean(Prefs.ALAC_ENABLED, v).apply() }
-    fun setAacEnabled(v: Boolean) { _aacEnabled.value = v; prefs.edit().putBoolean(Prefs.AAC_ENABLED, v).apply() }
-    fun setResolution(v: String) { _resolution.value = v; prefs.edit().putString(Prefs.RESOLUTION, v).apply() }
-    fun setMaxFps(v: Int) { _maxFps.value = v; prefs.edit().putInt(Prefs.MAX_FPS, v).apply() }
-    fun setOverscanned(v: Boolean) { _overscanned.value = v; prefs.edit().putBoolean(Prefs.OVERSCANNED, v).apply() }
-    fun setRequirePin(v: Boolean) { _requirePin.value = v; prefs.edit().putBoolean(Prefs.REQUIRE_PIN, v).apply() }
-    fun setAllowNewConn(v: Boolean) { _allowNewConn.value = v; prefs.edit().putBoolean(Prefs.ALLOW_NEW_CONN, v).apply() }
-    fun setAudioLatencyMs(v: Int) { _audioLatencyMs.value = v; prefs.edit().putInt(Prefs.AUDIO_LATENCY_MS, v).apply() }
+    fun setSwAlacEnabled(v: Boolean) { _swAlacEnabled.value = v; prefs.edit().putBoolean(Prefs.SW_ALAC_ENABLED, v).apply(); _applyByServerRestart() }
+    fun setAlacEnabled(v: Boolean) { _alacEnabled.value = v; prefs.edit().putBoolean(Prefs.ALAC_ENABLED, v).apply(); _applyByServerRestart() }
+    fun setAacEnabled(v: Boolean) { _aacEnabled.value = v; prefs.edit().putBoolean(Prefs.AAC_ENABLED, v).apply(); _applyByServerRestart() }
+    fun setResolution(v: String) { _resolution.value = v; prefs.edit().putString(Prefs.RESOLUTION, v).apply(); _applyByServerRestart() }
+    fun setMaxFps(v: Int) { _maxFps.value = v; prefs.edit().putInt(Prefs.MAX_FPS, v).apply(); _applyByServerRestart() }
+    fun setOverscanned(v: Boolean) { _overscanned.value = v; prefs.edit().putBoolean(Prefs.OVERSCANNED, v).apply(); _applyByServerRestart() }
+    fun setRequirePin(v: Boolean) { _requirePin.value = v; prefs.edit().putBoolean(Prefs.REQUIRE_PIN, v).apply(); _applyByServerRestart() }
+    fun setAllowNewConn(v: Boolean) { _allowNewConn.value = v; prefs.edit().putBoolean(Prefs.ALLOW_NEW_CONN, v).apply(); _applyByServerRestart() }
+    fun setAudioLatencyMs(v: Int) { _audioLatencyMs.value = v; prefs.edit().putInt(Prefs.AUDIO_LATENCY_MS, v).apply(); _applyByServerRestart() }
     fun setIdlePreview(v: Boolean) { _idlePreview.value = v; prefs.edit().putBoolean(Prefs.IDLE_PREVIEW, v).apply() }
     fun setAutoFullscreen(v: Boolean) { _autoFullscreen.value = v; prefs.edit().putBoolean(Prefs.AUTO_FULLSCREEN, v).apply() }
     fun setKeepScreenOn(v: Boolean) { _keepScreenOn.value = v; prefs.edit().putBoolean(Prefs.KEEP_SCREEN_ON, v).apply() }
-    fun setAdvertiseVideo(v: Boolean) { _advertiseVideo.value = v; prefs.edit().putBoolean(Prefs.ADVERTISE_VIDEO, v).apply() }
-    fun setAdvertiseAudio(v: Boolean) { _advertiseAudio.value = v; prefs.edit().putBoolean(Prefs.ADVERTISE_AUDIO, v).apply() }
+    fun setAdvertiseVideo(v: Boolean) { _advertiseVideo.value = v; prefs.edit().putBoolean(Prefs.ADVERTISE_VIDEO, v).apply(); _applyByServerRestart() }
+    fun setAdvertiseAudio(v: Boolean) { _advertiseAudio.value = v; prefs.edit().putBoolean(Prefs.ADVERTISE_AUDIO, v).apply(); _applyByServerRestart() }
     fun setLaunchOnConnect(v: Boolean) { _launchOnConnect.value = v; prefs.edit().putBoolean(Prefs.LAUNCH_ON_CONNECT, v).apply() }
     fun setDebugEnabled(v: Boolean) { _debugEnabled.value = v; prefs.edit().putBoolean(Prefs.DEBUG_ENABLED, v).apply() }
     fun setDeveloperOptions(v: Boolean) {
@@ -357,6 +376,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         val value = v.coerceIn(4, 8)
         _audioBufferMultiplier.value = value
         prefs.edit().putInt(Prefs.AUDIO_BUFFER_MULTIPLIER, value).apply()
+        _applyByServerRestart()
     }
 
     // service binding
@@ -544,5 +564,6 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         const val SCRUB_SETTLE_TIMEOUT_MS = 3_000L
         // raise if the play/pause icon flickers back right after a local toggle
         const val VIDEO_ACTION_SYNC_HOLD_MS = 700L
+        const val SERVER_RESTART_DEBOUNCE_MS = 500L
     }
 }
