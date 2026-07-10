@@ -50,6 +50,9 @@ data class VideoPlaybackInfo(
     val positionMs: Long = 0,
     val durationMs: Long = 0,
     val playing: Boolean = true,
+    val speed: Float = 1f,
+    val skipSilence: Boolean = false,
+    val buffering: Boolean = false,
 )
 
 class AirPlayService : Service(), RaopCallbackHandler {
@@ -63,7 +66,10 @@ class AirPlayService : Service(), RaopCallbackHandler {
     val audioRenderer = AudioRenderer()
     val airPlayVideoPlayer by lazy { AirPlayVideoPlayer(this) }
     val videoDownloader by lazy { VideoDownloader(this) }
-    @Volatile private var _videoLocation: String? = null
+
+    // hls urls point at the native httpd, valid only while the session lives
+    private val _videoLocation = MutableStateFlow<String?>(null)
+    val videoLocation = _videoLocation.asStateFlow()
 
     private val _serverState = MutableStateFlow(ServerState.STOPPED)
     val serverState = _serverState.asStateFlow()
@@ -92,6 +98,13 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     private val _videoPlaybackAspect = MutableStateFlow(16f / 9f)
     val videoPlaybackAspect = _videoPlaybackAspect.asStateFlow()
+
+    private val _videoPlaybackSize = MutableStateFlow<Pair<Int, Int>?>(null)
+    val videoPlaybackSize = _videoPlaybackSize.asStateFlow()
+
+    // container/manifest metadata
+    private val _videoTitle = MutableStateFlow("")
+    val videoTitle = _videoTitle.asStateFlow()
 
     // recent /playback-info polls with no playback = pending video; polls start ~1s before /play
     @Volatile private var _lastVideoPollAt = 0L
@@ -213,18 +226,25 @@ class AirPlayService : Service(), RaopCallbackHandler {
         }
         ContextCompat.registerReceiver(this, mediaReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
-        airPlayVideoPlayer.onVideoAspect = { _videoPlaybackAspect.value = it }
+        airPlayVideoPlayer.onVideoSize = { width, height, aspect ->
+            _videoPlaybackAspect.value = aspect
+            _videoPlaybackSize.value = width to height
+        }
+        airPlayVideoPlayer.onTitle = { _videoTitle.value = it ?: "" }
         airPlayVideoPlayer.onEnded = { _endVideoPlayback("AirPlay Video stopped (player)") }
-        airPlayVideoPlayer.onPlaybackInfo = { position, duration, rate, ready, playWhenReady ->
+        airPlayVideoPlayer.onPlaybackInfo = { snapshot ->
             if (nativeHandle != 0L) {
-                NativeBridge.nativeUpdatePlaybackInfo(nativeHandle, position, duration, rate, ready)
+                NativeBridge.nativeUpdatePlaybackInfo(nativeHandle, snapshot.position, snapshot.duration, snapshot.rate, snapshot.ready)
             }
             if (_videoPlaybackActive.value) {
-                _updateVideoPlaybackState(position, rate)
+                _updateVideoPlaybackState(snapshot.position, snapshot.rate)
                 _videoPlaybackInfo.value = VideoPlaybackInfo(
-                    positionMs = (position * 1000).toLong(),
-                    durationMs = if (duration > 0f) (duration * 1000).toLong() else 0L,
-                    playing = playWhenReady,
+                    positionMs = (snapshot.position * 1000).toLong(),
+                    durationMs = if (snapshot.duration > 0f) (snapshot.duration * 1000).toLong() else 0L,
+                    playing = snapshot.playWhenReady,
+                    speed = snapshot.speed,
+                    skipSilence = snapshot.skipSilence,
+                    buffering = snapshot.buffering,
                 )
             }
         }
@@ -406,11 +426,26 @@ class AirPlayService : Service(), RaopCallbackHandler {
         airPlayVideoPlayer.scrub(positionMs / 1000f)
     }
 
+    fun setVideoScrubbing(enabled: Boolean) {
+        airPlayVideoPlayer.setScrubbing(enabled)
+    }
+
+    fun setVideoSpeed(speed: Float) {
+        airPlayVideoPlayer.setSpeed(speed)
+    }
+
+    fun setVideoSkipSilence(enabled: Boolean) {
+        airPlayVideoPlayer.setSkipSilence(enabled)
+    }
+
+    fun seekVideoBy(deltaMs: Long) {
+        airPlayVideoPlayer.seekBy(deltaMs)
+    }
+
     fun stopVideoPlayback() = _endVideoPlayback("AirPlay Video stopped (local)")
 
-    // hls urls point at the native httpd, valid only while the session lives
     fun downloadVideo() {
-        _videoLocation?.let { videoDownloader.start(it) }
+        _videoLocation.value?.let { videoDownloader.start(it) }
     }
 
     private fun _endVideoPlayback(message: String) {
@@ -451,11 +486,13 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     override fun onVideoPlay(location: String, startPositionSeconds: Float) {
-        _videoLocation = location
+        _videoLocation.value = location
         _videoPlaySeq.value++
         _videoPollSuppressed = false
         _videoPlaybackInfo.value = VideoPlaybackInfo(positionMs = (startPositionSeconds * 1000).toLong())
         _videoPlaybackAspect.value = 16f / 9f
+        _videoPlaybackSize.value = null
+        _videoTitle.value = ""
         _videoPlaybackActive.value = true
         airPlayVideoPlayer.play(location, startPositionSeconds)
         // claim media-button routing for keys that arrive as media-session events
@@ -827,8 +864,8 @@ class AirPlayService : Service(), RaopCallbackHandler {
         const val ACTION_NEXT = "io.github.jqssun.airplay.NEXT"
         const val ACTION_PREV = "io.github.jqssun.airplay.PREV"
         const val ACTION_START_SERVER = "io.github.jqssun.airplay.START_SERVER"
-        // single-press seek step, shared with the dpad scrub ramp's first tier
-        const val VIDEO_SEEK_STEP_MS = 5_000L
+        // shared with dpad/double-tap seeks
+        const val VIDEO_SEEK_STEP_MS = 10_000L
         const val VIDEO_POLL_PENDING_TIMEOUT_MS = 3_000L
     }
 }

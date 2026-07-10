@@ -188,6 +188,18 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _videoPlaybackAspect = MutableStateFlow(16f / 9f)
     val videoPlaybackAspect: StateFlow<Float> = _videoPlaybackAspect.asStateFlow()
 
+    private val _videoPlaybackSize = MutableStateFlow<Pair<Int, Int>?>(null)
+    val videoPlaybackSize: StateFlow<Pair<Int, Int>?> = _videoPlaybackSize.asStateFlow()
+
+    private val _videoBuffering = MutableStateFlow(false)
+    val videoBuffering: StateFlow<Boolean> = _videoBuffering.asStateFlow()
+
+    private val _videoTitle = MutableStateFlow("")
+    val videoTitle: StateFlow<String> = _videoTitle.asStateFlow()
+
+    private val _videoLocation = MutableStateFlow<String?>(null)
+    val videoLocation: StateFlow<String?> = _videoLocation.asStateFlow()
+
     // optimistic for instant icon feedback, re-synced from the delayed snapshot
     private val _videoPlaying = MutableStateFlow(true)
     val videoPlaying: StateFlow<Boolean> = _videoPlaying.asStateFlow()
@@ -197,13 +209,18 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _videoDownloadProgress = MutableStateFlow<Int?>(null)
     val videoDownloadProgress: StateFlow<Int?> = _videoDownloadProgress.asStateFlow()
 
+    // mirror the player's playback parameters; sender /rate commands reset speed to 1
+    private val _videoSpeed = MutableStateFlow(1f)
+    val videoSpeed: StateFlow<Float> = _videoSpeed.asStateFlow()
+    private val _videoSkipSilence = MutableStateFlow(false)
+    val videoSkipSilence: StateFlow<Boolean> = _videoSkipSilence.asStateFlow()
+    private var _videoParamsActionAt = 0L
+
     // non-null while a scrub is in flight; committed once after a debounce
     private val _videoScrubPositionMs = MutableStateFlow<Long?>(null)
     val videoScrubPositionMs: StateFlow<Long?> = _videoScrubPositionMs.asStateFlow()
     private var _scrubJob: Job? = null
     private var _lastVideoPlaySeq = 0L
-    private var _scrubLastStepAt = 0L
-    private var _scrubStepsTaken = 0
 
     private val _mirroringActive = MutableStateFlow(false)
     val mirroringActive: StateFlow<Boolean> = _mirroringActive.asStateFlow()
@@ -372,51 +389,46 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         service?.clearVideoPlaybackSurface(surface)
     }
 
-    fun toggleVideoPlayPause() = setVideoPlaying(!_videoPlaying.value)
+    fun toggleVideoPlayPause(showOverlay: Boolean = true) = setVideoPlaying(!_videoPlaying.value, showOverlay)
 
-    fun setVideoPlaying(playing: Boolean) {
+    fun setVideoPlaying(playing: Boolean, showOverlay: Boolean = true) {
         // pending session: there is no local media yet, nothing to toggle
         if (!_videoPlaybackActive.value) return
         _videoPlaying.value = playing
         _videoActionAt = SystemClock.elapsedRealtime()
         service?.setVideoPlaying(playing)
-        showVideoOverlay()
+        if (showOverlay) showVideoOverlay()
     }
 
-    // tap jumps one tier-0 step; holds take one throttled step per window, ramping tiers
-    fun scrubVideoBy(direction: Int, repeatCount: Int) {
-        val now = SystemClock.elapsedRealtime()
-        if (repeatCount == 0) {
-            _scrubStepsTaken = 0
-        } else if (now - _scrubLastStepAt < SCRUB_REPEAT_THROTTLE_MS) {
-            return
+    // hold the target until the reported position catches up (hls rebuffer)
+    private suspend fun _holdScrubUntilSettled(target: Long) {
+        val deadline = SystemClock.elapsedRealtime() + SCRUB_SETTLE_TIMEOUT_MS
+        while (SystemClock.elapsedRealtime() < deadline) {
+            delay(SCRUB_SETTLE_POLL_MS)
+            if (abs(_videoPositionMs.value - target) <= SCRUB_SETTLE_EPSILON_MS) break
         }
-        _scrubLastStepAt = now
-        val tier = (_scrubStepsTaken / SCRUB_RAMP_DWELL_STEPS).coerceAtMost(SCRUB_STEP_TIERS_MS.lastIndex)
-        val step = SCRUB_STEP_TIERS_MS[tier]
-        _scrubStepsTaken++
-        val from = _videoScrubPositionMs.value ?: _videoPositionMs.value
-        var target = (from + direction * step).coerceAtLeast(0L)
-        val duration = _videoDurationMs.value
-        if (duration > 0) target = target.coerceAtMost(duration)
-        _videoScrubPositionMs.value = target
-        showVideoOverlay()
-        _scheduleScrubCommit()
+        _videoScrubPositionMs.value = null
     }
 
-    private fun _scheduleScrubCommit() {
+    // drag-seek: live seeks under scrubbing mode, settle-hold on release
+    fun startVideoScrub() {
+        _scrubJob?.cancel()
+        service?.setVideoScrubbing(true)
+    }
+
+    fun scrubVideoTo(positionMs: Long) {
+        val duration = _videoDurationMs.value
+        if (duration <= 0) return
+        val target = positionMs.coerceIn(0L, duration)
+        _videoScrubPositionMs.value = target
+        service?.seekVideoTo(target)
+    }
+
+    fun endVideoScrub() {
+        service?.setVideoScrubbing(false)
         _scrubJob?.cancel()
         _scrubJob = viewModelScope.launch {
-            delay(SCRUB_COMMIT_DEBOUNCE_MS)
-            val target = _videoScrubPositionMs.value ?: return@launch
-            service?.seekVideoTo(target)
-            // hold the target until the reported position catches up (hls rebuffer)
-            val deadline = SystemClock.elapsedRealtime() + SCRUB_SETTLE_TIMEOUT_MS
-            while (SystemClock.elapsedRealtime() < deadline) {
-                delay(SCRUB_SETTLE_POLL_MS)
-                if (abs(_videoPositionMs.value - target) <= SCRUB_SETTLE_EPSILON_MS) break
-            }
-            _videoScrubPositionMs.value = null
+            _holdScrubUntilSettled(_videoScrubPositionMs.value ?: return@launch)
         }
     }
 
@@ -426,6 +438,23 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
 
     fun stopVideoPlayback() {
         service?.stopVideoPlayback()
+    }
+
+    fun setVideoSpeed(speed: Float) {
+        val value = speed.coerceIn(0.2f, 4f)
+        _videoSpeed.value = value
+        _videoParamsActionAt = SystemClock.elapsedRealtime()
+        service?.setVideoSpeed(value)
+    }
+
+    fun setVideoSkipSilence(enabled: Boolean) {
+        _videoSkipSilence.value = enabled
+        _videoParamsActionAt = SystemClock.elapsedRealtime()
+        service?.setVideoSkipSilence(enabled)
+    }
+
+    fun seekVideoBy(deltaMs: Long) {
+        service?.seekVideoBy(deltaMs)
     }
 
     fun toggleVideoDownload() {
@@ -462,6 +491,8 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
                 _videoPlaying.value = true
                 _videoActionAt = 0
                 _videoOverlayTick.value = 0
+                _videoSpeed.value = 1f
+                _videoSkipSilence.value = false
                 _scrubJob?.cancel()
                 _videoScrubPositionMs.value = null
             }
@@ -472,7 +503,16 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
                 val info = it.videoPlaybackInfo.value
                 _videoPositionMs.value = info.positionMs
                 _videoDurationMs.value = info.durationMs
+                if (SystemClock.elapsedRealtime() - _videoParamsActionAt > VIDEO_ACTION_SYNC_HOLD_MS) {
+                    _videoSpeed.value = info.speed
+                    _videoSkipSilence.value = info.skipSilence
+                }
+                _videoBuffering.value = info.buffering
                 _videoPlaybackAspect.value = it.videoPlaybackAspect.value
+                _videoPlaybackSize.value = it.videoPlaybackSize.value
+                // stream metadata first, dmap second; senders rarely provide either for video
+                _videoTitle.value = it.videoTitle.value.ifEmpty { it.trackInfo.value.title }
+                _videoLocation.value = it.videoLocation.value
                 // stale snapshots must not overwrite a just-made optimistic action
                 if (SystemClock.elapsedRealtime() - _videoActionAt > VIDEO_ACTION_SYNC_HOLD_MS) {
                     _videoPlaying.value = info.playing
@@ -480,6 +520,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
             } else {
                 _videoPositionMs.value = 0
                 _videoDurationMs.value = 0
+                _videoBuffering.value = false
             }
             _mirroringActive.value = it.mirroringActive.value
             _trackInfo.value = it.trackInfo.value
@@ -493,14 +534,6 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     }
 
     private companion object {
-        // one accepted held-scrub step per window; also the bar's visible cadence
-        const val SCRUB_REPEAT_THROTTLE_MS = 150L
-        // first entry = single-tap jump, shared with the media-session ff/rw step
-        val SCRUB_STEP_TIERS_MS = longArrayOf(
-            AirPlayService.VIDEO_SEEK_STEP_MS, 10_000, 15_000, 20_000, 30_000, 45_000, 60_000
-        )
-        const val SCRUB_RAMP_DWELL_STEPS = 2
-        const val SCRUB_COMMIT_DEBOUNCE_MS = 400L
         // post-commit: show the target until within epsilon, give up after the timeout
         const val SCRUB_SETTLE_POLL_MS = 100L
         const val SCRUB_SETTLE_EPSILON_MS = 2_000L

@@ -18,7 +18,7 @@
     <!-- Overview -->
     <string name="server_stopped">Server stopped</string>
     <string name="waiting_for_connection">Waiting for connection...</string>
-    <string name="waiting_for_playback">Please start playing on the sender...</string>
+    <string name="waiting_for_playback">Press start on the sender...</string>
     <string name="error_starting_server">Error starting server</string>
     <string name="connected_count">%d connected</string>
     <string name="error_label">Error</string>
@@ -41,6 +41,24 @@
     <!-- Video download -->
     <string name="download_saved">Saved to %1$s</string>
     <string name="download_failed">Download failed</string>
+
+    <!-- Player gestures -->
+    <string name="gesture_seek_seconds">%1$d seconds</string>
+    <string name="seconds_short">%1$ds</string>
+    <string name="select_playback_speed">Playback speed</string>
+    <string name="cd_reset_speed">Reset speed</string>
+    <string name="skip_silence">Skip silence</string>
+
+    <!-- Player controls -->
+    <string name="cd_back">Back</string>
+    <string name="cd_copy_url">Copy video URL</string>
+    <string name="cd_rotate">Rotate screen</string>
+    <string name="cd_lock_controls">Lock controls</string>
+    <string name="cd_unlock_controls">Unlock controls</string>
+    <string name="scale_best_fit">Best fit</string>
+    <string name="scale_stretch">Stretch</string>
+    <string name="scale_crop">Crop</string>
+    <string name="scale_hundred_percent">100%</string>
 
     <!-- Dialogs -->
     <string name="dialog_pin_title">AirPlay PIN</string>

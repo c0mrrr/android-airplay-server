@@ -16,6 +16,8 @@ fun VideoSurfaceView(
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: (Surface) -> Unit,
     aspectRatio: Float = 16f / 9f,
+    // false = caller sizes the surface (content-scale modes)
+    applyAspectRatio: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val callbacks = remember {
@@ -38,8 +40,12 @@ fun VideoSurfaceView(
                 it.holder.addCallback(callbacks)
             }
         },
-        modifier = modifier
-            .aspectRatio(aspectRatio, matchHeightConstraintsFirst = aspectRatio < 1f)
-            .fillMaxSize()
+        modifier = if (applyAspectRatio) {
+            modifier
+                .aspectRatio(aspectRatio, matchHeightConstraintsFirst = aspectRatio < 1f)
+                .fillMaxSize()
+        } else {
+            modifier
+        }
     )
 }

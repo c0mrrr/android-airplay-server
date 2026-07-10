@@ -14,7 +14,7 @@ val localProps = Properties().apply {
 
 android {
     namespace = "io.github.jqssun.airplay"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     if (localProps.containsKey("storeFile")) {
@@ -32,8 +32,8 @@ android {
         applicationId = "io.github.jqssun.airplay"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.0.19"
+        versionCode = 20
+        versionName = "0.0.20"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")

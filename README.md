@@ -63,7 +63,7 @@ Check out the [CI](https://github.com/jqssun/android-airplay-server/blob/main/.g
 
 - [UxPlay](https://github.com/FDH2/UxPlay) for the AirPlay/RAOP server implementation
 - [ALAC](https://github.com/macosforge/alac) for the lossless audio decoder
-
+- [Next Player](https://github.com/anilbeesetti/nextplayer) for the video player
 
 ---
 

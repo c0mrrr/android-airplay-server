@@ -1,28 +1,34 @@
 package io.github.jqssun.airplay.ui
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -30,8 +36,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,10 +44,23 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.jqssun.airplay.R
 import io.github.jqssun.airplay.service.AirPlayService.ServerState
+import io.github.jqssun.airplay.ui.gestures.BrightnessState
+import io.github.jqssun.airplay.ui.gestures.DoubleTapIndicator
+import io.github.jqssun.airplay.ui.gestures.GestureInfoText
+import io.github.jqssun.airplay.ui.gestures.SeekGestureState
+import io.github.jqssun.airplay.ui.gestures.TapGestureState
+import io.github.jqssun.airplay.ui.gestures.VerticalGesture
+import io.github.jqssun.airplay.ui.gestures.VideoContentScale
+import io.github.jqssun.airplay.ui.gestures.VerticalProgressIndicator
+import io.github.jqssun.airplay.ui.gestures.VideoPlayerGestures
+import io.github.jqssun.airplay.ui.gestures.VolumeAndBrightnessGestureState
+import io.github.jqssun.airplay.ui.gestures.VolumeState
+import io.github.jqssun.airplay.ui.gestures.ZoomState
 import io.github.jqssun.airplay.viewmodel.DebugInfo
 import io.github.jqssun.airplay.viewmodel.MainViewModel
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 
 private enum class Tab(val labelRes: Int, val icon: ImageVector) {
@@ -161,33 +178,295 @@ fun MainScreen(
                 }
             }
         }
+        val gestureScope = rememberCoroutineScope()
+        val tapGestureState = remember(viewModel) { TapGestureState(viewModel, gestureScope) }
+        val seekGestureState = remember(viewModel) { SeekGestureState(viewModel) }
+        val context = LocalContext.current
+        val volumeState = remember { VolumeState(context) }
+        val brightnessState = remember(activity) { activity?.window?.let { BrightnessState(it) } }
+        val volumeAndBrightnessGestureState = remember(volumeState, brightnessState) {
+            VolumeAndBrightnessGestureState(volumeState, brightnessState, gestureScope)
+        }
+        val zoomState = remember(viewModel) { ZoomState(viewModel, gestureScope) }
+        var controlsLocked by remember { mutableStateOf(false) }
+        DisposableEffect(volumeState) { volumeState.handleLifecycle(this) }
+        LaunchedEffect(overlayTick) {
+            if (overlayTick == 0L) {
+                zoomState.reset()
+                controlsLocked = false
+            }
+        }
+        DisposableEffect(brightnessState) {
+            onDispose { brightnessState?.clearOverride() }
+        }
+        // orientation follows the video aspect; manual rotate holds until the next video
+        LaunchedEffect(videoPlaybackAspect) {
+            activity?.requestedOrientation = if (videoPlaybackAspect < 1f) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+        }
+        DisposableEffect(activity) {
+            onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+        }
+        val videoPlaybackSize by viewModel.videoPlaybackSize.collectAsState()
+        val buffering by viewModel.videoBuffering.collectAsState()
+        val videoTitle by viewModel.videoTitle.collectAsState()
+        val videoLocation by viewModel.videoLocation.collectAsState()
+        val speed by viewModel.videoSpeed.collectAsState()
+        val isPipSupported = remember {
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        }
+        var showSpeedSelector by remember { mutableStateOf(false) }
+        BackHandler { viewModel.stopVideoPlayback() }
+
+        val rootFocusRequester = remember { FocusRequester() }
+        val playPauseFocusRequester = remember { FocusRequester() }
+        val unlockFocusRequester = remember { FocusRequester() }
+        var isPlayPauseFocused by remember { mutableStateOf(false) }
+        var isUnlockFocused by remember { mutableStateOf(false) }
+        LaunchedEffect(overlayVisible, controlsLocked, showSpeedSelector) {
+            if (showSpeedSelector) return@LaunchedEffect
+            if (!overlayVisible) {
+                runCatching { rootFocusRequester.requestFocus() }
+                return@LaunchedEffect
+            }
+            val locked = controlsLocked
+            val target = if (locked) unlockFocusRequester else playPauseFocusRequester
+            target.requestFocusUntilLanded(attempts = 20) { if (locked) isUnlockFocused else isPlayPauseFocused }
+        }
+
+        // dpad seeking (controls hidden): accumulate the skipped amount and briefly show it
+        var dpadSeekOffsetMs by remember { mutableLongStateOf(0L) }
+        var dpadSeekTargetMs by remember { mutableLongStateOf(0L) }
+        var dpadSeekActive by remember { mutableStateOf(false) }
+        var dpadSeekTick by remember { mutableIntStateOf(0) }
+        LaunchedEffect(dpadSeekTick) {
+            if (!dpadSeekActive) return@LaunchedEffect
+            delay(1000)
+            dpadSeekActive = false
+        }
+        val showDpadSeekFeedback: (Long) -> Unit = { deltaMs ->
+            if (!dpadSeekActive) dpadSeekOffsetMs = 0L
+            dpadSeekOffsetMs += deltaMs
+            dpadSeekTargetMs = (dpadSeekTargetMs.takeIf { dpadSeekActive } ?: positionMs).plus(deltaMs)
+                .coerceIn(0L, if (durationMs > 0) durationMs else Long.MAX_VALUE)
+            dpadSeekActive = true
+            dpadSeekTick++
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = {
-                        if (overlayVisible) viewModel.toggleVideoPlayPause()
-                        else viewModel.showVideoOverlay()
-                    })
+                .focusRequester(rootFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { keyEvent ->
+                    if (showSpeedSelector) {
+                        false
+                    } else {
+                        handlePlayerKeyEvent(
+                            keyEvent = keyEvent,
+                            controlsVisible = overlayVisible,
+                            controlsLocked = controlsLocked,
+                            isPlayPauseFocused = isPlayPauseFocused,
+                            seekIncrementMs = TapGestureState.SEEK_INCREMENT_MS,
+                            viewModel = viewModel,
+                            showControls = { viewModel.showVideoOverlay() },
+                            unlockControls = {
+                                controlsLocked = false
+                                viewModel.showVideoOverlay()
+                            },
+                            onDpadSeek = showDpadSeekFeedback,
+                        )
+                    }
                 },
             contentAlignment = Alignment.Center
         ) {
-            playback()
-            androidx.compose.animation.AnimatedVisibility(
-                visible = overlayVisible,
-                enter = androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                VideoTransportOverlay(
-                    playing = playing && videoPlaybackActive,
-                    positionMs = scrubPositionMs ?: positionMs,
-                    durationMs = durationMs,
-                    downloadProgress = downloadProgress,
-                    onDownload = { viewModel.toggleVideoDownload() }
+            VideoContentFrame(
+                aspect = videoPlaybackAspect,
+                videoSizePx = videoPlaybackSize,
+                contentScale = zoomState.contentScale,
+                zoom = zoomState.zoom
+            ) { sizeModifier ->
+                VideoSurfaceView(
+                    onSurfaceAvailable = { viewModel.onVideoPlaybackSurfaceAvailable(it) },
+                    onSurfaceDestroyed = { viewModel.onVideoPlaybackSurfaceDestroyed(it) },
+                    applyAspectRatio = false,
+                    modifier = sizeModifier
                 )
             }
+            VideoPlayerGestures(
+                enabled = videoPlaybackActive,
+                locked = controlsLocked,
+                onTap = {
+                    // a pending session pins the overlay; taps must not unpin it
+                    if (!videoPlaybackActive) return@VideoPlayerGestures
+                    if (overlayVisible) overlayVisible = false else viewModel.showVideoOverlay()
+                },
+                tapGestureState = tapGestureState,
+                seekGestureState = seekGestureState,
+                volumeAndBrightnessGestureState = volumeAndBrightnessGestureState,
+                zoomState = zoomState
+            )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = overlayVisible && videoPlaybackActive && !controlsLocked,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut()
+            ) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+            }
+            if (buffering) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center).size(72.dp))
+            }
+            DoubleTapIndicator(tapGestureState = tapGestureState)
+            val seekAmountMs = seekGestureState.seekAmountMs
+            when {
+                seekAmountMs != null -> GestureInfoText(
+                    info = "${if (seekAmountMs < 0) "-" else "+"}${formatVideoTime(abs(seekAmountMs))}\n" +
+                        "[${formatVideoTime(seekGestureState.targetPositionMs ?: 0)}]",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+                zoomState.isZooming -> GestureInfoText(
+                    info = "${(zoomState.zoom * 100).toInt()}%",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+                zoomState.showContentScaleIndicator -> GestureInfoText(
+                    info = stringResource(zoomState.contentScale.nameRes()),
+                    modifier = Modifier.align(Alignment.Center)
+                )
+                else -> androidx.compose.animation.AnimatedVisibility(
+                    visible = overlayVisible && videoPlaybackActive && !controlsLocked,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.Center)
+                ) {
+                    PlayPauseButton(
+                        playing = playing,
+                        onClick = { viewModel.toggleVideoPlayPause() },
+                        modifier = Modifier
+                            .focusRequester(playPauseFocusRequester)
+                            .onFocusChanged { isPlayPauseFocused = it.hasFocus }
+                    )
+                }
+            }
+            DpadSeekIndicator(
+                visible = dpadSeekActive && dpadSeekOffsetMs != 0L,
+                offsetMs = dpadSeekOffsetMs,
+                positionMs = dpadSeekTargetMs
+            )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = volumeAndBrightnessGestureState.activeGesture == VerticalGesture.VOLUME,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.align(Alignment.CenterStart).padding(24.dp)
+            ) {
+                VerticalProgressIndicator(value = volumeState.percentage, icon = Icons.AutoMirrored.Rounded.VolumeUp)
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = volumeAndBrightnessGestureState.activeGesture == VerticalGesture.BRIGHTNESS,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.align(Alignment.CenterEnd).padding(24.dp)
+            ) {
+                VerticalProgressIndicator(value = brightnessState?.percentage ?: 0, icon = Icons.Rounded.BrightnessHigh)
+            }
+            if (controlsLocked) {
+                if (overlayVisible) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .safeDrawingPadding()
+                            .padding(top = 24.dp)
+                    ) {
+                        UnlockButton(
+                            onClick = {
+                                controlsLocked = false
+                                viewModel.showVideoOverlay()
+                            },
+                            modifier = Modifier
+                                .focusRequester(unlockFocusRequester)
+                                .onFocusChanged { isUnlockFocused = it.hasFocus }
+                        )
+                    }
+                }
+            } else {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = overlayVisible,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                ) {
+                    VideoControlsTop(
+                        title = videoTitle,
+                        videoUrl = videoLocation,
+                        downloadProgress = downloadProgress,
+                        showDownload = durationMs > 0,
+                        onBackClick = { viewModel.stopVideoPlayback() },
+                        onSpeedClick = {
+                            overlayVisible = false
+                            showSpeedSelector = true
+                        },
+                        onDownloadClick = { viewModel.toggleVideoDownload() }
+                    )
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = overlayVisible,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) {
+                    VideoControlsBottom(
+                        positionMs = scrubPositionMs ?: positionMs,
+                        durationMs = durationMs,
+                        contentScale = zoomState.contentScale,
+                        isPipSupported = isPipSupported,
+                        onRotateClick = {
+                            activity?.let {
+                                it.requestedOrientation =
+                                    if (it.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                                    } else {
+                                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                    }
+                            }
+                        },
+                        onLockClick = {
+                            viewModel.showVideoOverlay()
+                            controlsLocked = true
+                        },
+                        onContentScaleClick = {
+                            viewModel.showVideoOverlay()
+                            zoomState.switchToNextContentScale()
+                        },
+                        onPipClick = onPip,
+                        onSeek = { seekGestureState.onSeek(it) },
+                        onSeekEnd = { seekGestureState.onSeekEnd() },
+                        seekBarModifier = Modifier
+                            .focusProperties { up = playPauseFocusRequester }
+                            .dpadAdjust(
+                                onLeft = {
+                                    viewModel.seekVideoBy(-TapGestureState.SEEK_INCREMENT_MS)
+                                    viewModel.showVideoOverlay()
+                                },
+                                onRight = {
+                                    viewModel.seekVideoBy(TapGestureState.SEEK_INCREMENT_MS)
+                                    viewModel.showVideoOverlay()
+                                }
+                            )
+                    )
+                }
+            }
+            val skipSilence by viewModel.videoSkipSilence.collectAsState()
+            PlaybackSpeedSelector(
+                show = showSpeedSelector,
+                speed = speed,
+                skipSilence = skipSilence,
+                onSpeedChange = { viewModel.setVideoSpeed(it) },
+                onSkipSilenceChange = { viewModel.setVideoSkipSilence(it) },
+                onDismiss = { showSpeedSelector = false }
+            )
         }
         return
     }
@@ -539,98 +818,6 @@ private fun FullscreenVideo(
     }
 }
 
-// while scrubbing, positionMs is the pending scrub target, not the live position
-@Composable
-private fun VideoTransportOverlay(
-    playing: Boolean,
-    positionMs: Long,
-    durationMs: Long,
-    downloadProgress: Int?,
-    onDownload: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
-                )
-            )
-            .padding(horizontal = 40.dp)
-            .padding(top = 48.dp, bottom = 28.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-            contentDescription = stringResource(R.string.cd_play_pause),
-            tint = Color.White,
-            modifier = Modifier.size(36.dp)
-        )
-        Spacer(Modifier.width(20.dp))
-        // duration 0 = not yet known, or a live stream: no meaningful bar to draw
-        if (durationMs > 0) {
-            // glide between updates so held-key scrubbing reads as one sweep
-            val barFraction by animateFloatAsState(
-                targetValue = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f),
-                animationSpec = tween(durationMillis = 150, easing = LinearEasing),
-                label = "videoSeekBar"
-            )
-            LinearProgressIndicator(
-                progress = { barFraction },
-                color = Color.White,
-                trackColor = Color.White.copy(alpha = 0.3f),
-                drawStopIndicator = {},
-                modifier = Modifier
-                    .weight(1f)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-            )
-            Spacer(Modifier.width(20.dp))
-            Text(
-                text = "${_formatTime(positionMs)} / ${_formatTime(durationMs)}",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White
-            )
-            Spacer(Modifier.width(12.dp))
-            val cancelCd = stringResource(R.string.cd_cancel_download)
-            IconButton(
-                onClick = onDownload,
-                modifier = if (downloadProgress != null) {
-                    Modifier.semantics { contentDescription = cancelCd }
-                } else Modifier
-            ) {
-                when {
-                    downloadProgress == null -> Icon(
-                        Icons.Default.Download,
-                        contentDescription = stringResource(R.string.cd_download),
-                        tint = Color.White
-                    )
-                    downloadProgress < 0 -> CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    else -> CircularProgressIndicator(
-                        progress = { downloadProgress / 100f },
-                        color = Color.White,
-                        trackColor = Color.White.copy(alpha = 0.3f),
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        } else {
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = _formatTime(positionMs),
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White
-            )
-        }
-    }
-}
-
 @Composable
 private fun NowPlayingContent(viewModel: MainViewModel) {
     val track by viewModel.trackInfo.collectAsState()
@@ -714,8 +901,8 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(_formatTime(positionMs), style = MaterialTheme.typography.labelSmall)
-                Text(_formatTime(durationMs), style = MaterialTheme.typography.labelSmall)
+                Text(formatVideoTime(positionMs), style = MaterialTheme.typography.labelSmall)
+                Text(formatVideoTime(durationMs), style = MaterialTheme.typography.labelSmall)
             }
         }
 
@@ -746,13 +933,7 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
     }
 }
 
-private const val VIDEO_OVERLAY_HIDE_MS = 3000L
-
-private fun _formatTime(ms: Long): String {
-    val s = (ms / 1000).toInt()
-    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
-    else "%d:%02d".format(s / 60, s % 60)
-}
+private const val VIDEO_OVERLAY_HIDE_MS = 4000L
 
 @Composable
 private fun DebugOverlay(info: DebugInfo, modifier: Modifier = Modifier) {
