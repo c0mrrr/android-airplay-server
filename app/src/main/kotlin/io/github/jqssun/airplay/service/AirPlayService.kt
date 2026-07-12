@@ -31,6 +31,7 @@ import io.github.jqssun.airplay.MainActivity
 import io.github.jqssun.airplay.Prefs
 import io.github.jqssun.airplay.R
 import io.github.jqssun.airplay.audio.DacpController
+import io.github.jqssun.airplay.audio.DacpPlayer
 import io.github.jqssun.airplay.audio.DmapParser
 import io.github.jqssun.airplay.audio.TrackInfo
 import io.github.jqssun.airplay.bridge.NativeBridge
@@ -142,6 +143,10 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     var dacpController: DacpController? = null
         private set
+    lateinit var dacpPlayer: DacpPlayer
+        private set
+    private val _mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var _coverArtBytes: ByteArray? = null
     private var mediaSession: MediaSessionCompat? = null
     private var mediaReceiver: BroadcastReceiver? = null
 
@@ -172,6 +177,21 @@ class AirPlayService : Service(), RaopCallbackHandler {
         super.onCreate()
         createNotificationChannel()
         dacpController = DacpController(this)
+        dacpPlayer = DacpPlayer(
+            mainLooper,
+            dacp = { dacpController },
+            snapshot = {
+                DacpPlayer.Snapshot(
+                    track = _trackInfo.value,
+                    artworkData = _coverArtBytes,
+                    durationMs = _durationMs.value,
+                    playing = _playing.value,
+                    active = _audioOnly.value && _connectionCount.value > 0,
+                )
+            },
+            positionMs = ::currentPositionMs,
+            setPlaying = ::_setPlaying,
+        )
         mediaSession = MediaSessionCompat(this, "AirPlay").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
@@ -396,11 +416,13 @@ class AirPlayService : Service(), RaopCallbackHandler {
         _videoPlaybackInfo.value = VideoPlaybackInfo()
         _lastVideoPollAt = 0
         _videoPollSuppressed = false
+        _coverArtBytes = null
         _trackInfo.value = TrackInfo()
         _positionMs.value = 0
         _durationMs.value = 0
         _serverState.value = ServerState.STOPPED
         _connectionCount.value = 0
+        _refreshDacpPlayer()
         stopForeground(STOP_FOREGROUND_REMOVE)
         foregroundStarted = false
         stopSelf()
@@ -465,6 +487,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     override fun onDestroy() {
         stopServer()
+        dacpPlayer.release()
         mediaReceiver?.let {
             try { unregisterReceiver(it) } catch (_: Exception) {}
         }
@@ -560,11 +583,13 @@ class AirPlayService : Service(), RaopCallbackHandler {
             _mirroringActive.value = false
             _lastVideoPollAt = 0
             _videoPollSuppressed = false
+            _coverArtBytes = null
             _trackInfo.value = TrackInfo()
             _positionMs.value = 0
             _durationMs.value = 0
             mediaSession?.isActive = false
             audioRenderer.markSessionEnded()
+            _refreshDacpPlayer()
         }
         log("Client disconnected (${_connectionCount.value})")
     }
@@ -586,27 +611,33 @@ class AirPlayService : Service(), RaopCallbackHandler {
         val map = DmapParser.parse(data)
         val info = TrackInfo.fromDmap(map, _trackInfo.value.coverArt)
         _trackInfo.value = info
-        _durationMs.value = info.durationMs
+        if (info.durationMs > 0) _durationMs.value = info.durationMs
         _updateMediaMetadata()
+        _refreshDacpPlayer()
         log("Track: ${info.artist} - ${info.title}")
     }
 
     override fun onCoverArt(data: ByteArray) {
         val bmp = BitmapFactory.decodeByteArray(data, 0, data.size) ?: return
+        _coverArtBytes = data
         _trackInfo.value = _trackInfo.value.copy(coverArt = bmp)
         _updateMediaMetadata()
+        _refreshDacpPlayer()
     }
 
     override fun onProgress(start: Long, curr: Long, end: Long) {
         val rate = 44100.0
         val posMs = ((curr - start) / rate * 1000).toLong().coerceAtLeast(0)
         val durMs = ((end - start) / rate * 1000).toLong().coerceAtLeast(0)
+        // pause/resume transitions emit degenerate progress; keep the last good value
+        if (durMs <= 0) return
         _positionMs.value = posMs
         _durationMs.value = durMs
         _progressBaseMs = posMs
         _progressBaseTime = SystemClock.elapsedRealtime()
         _playing.value = true
         _updatePlaybackState()
+        _refreshDacpPlayer()
     }
 
     override fun onDacpId(dacpId: String, activeRemote: String) {
@@ -617,12 +648,14 @@ class AirPlayService : Service(), RaopCallbackHandler {
     override fun onAudioOnly(audioOnly: Boolean) {
         val prev = _audioOnly.value
         _audioOnly.value = audioOnly
+        _refreshDacpPlayer()
         if (audioOnly && !prev) {
             mediaSession?.isActive = true
             modeCallback?.invoke(true)
             log("Audio mode")
         } else if (!audioOnly && prev) {
             mediaSession?.isActive = false
+            _coverArtBytes = null
             _trackInfo.value = TrackInfo()
             _positionMs.value = 0
             _durationMs.value = 0
@@ -646,11 +679,12 @@ class AirPlayService : Service(), RaopCallbackHandler {
     fun togglePlayPause() {
         val nowPlaying = !_playing.value
         _setPlaying(nowPlaying)
-        dacpController?.playPause()
+        dacpController?.let { if (nowPlaying) it.play() else it.pause() }
     }
 
     private fun _setPlaying(playing: Boolean) {
         _playing.value = playing
+        _refreshDacpPlayer()
         if (playing) {
             // resume extrapolation from current position
             _progressBaseMs = _positionMs.value
@@ -717,6 +751,10 @@ class AirPlayService : Service(), RaopCallbackHandler {
     private var _lastVideoStateRate = -1f
     private var _lastVideoStatePosMs = 0L
     private var _lastVideoStateAtMs = 0L
+
+    private fun _refreshDacpPlayer() {
+        _mainHandler.post { dacpPlayer.refresh() }
+    }
 
     private fun clearPin() {
         _lastPin = null

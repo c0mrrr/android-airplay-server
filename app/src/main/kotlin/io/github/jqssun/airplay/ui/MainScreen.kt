@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
+import androidx.annotation.OptIn as AndroidxOptIn
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,6 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.BrightnessHigh
@@ -60,6 +63,15 @@ import io.github.jqssun.airplay.viewmodel.DebugInfo
 import io.github.jqssun.airplay.viewmodel.MainViewModel
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.ui.compose.material3.MiniController
+import androidx.media3.ui.compose.material3.buttons.NextButton
+import androidx.media3.ui.compose.material3.buttons.PlayPauseButton
+import androidx.media3.ui.compose.material3.buttons.PreviousButton
+import androidx.media3.ui.compose.material3.indicator.DurationText
+import androidx.media3.ui.compose.material3.indicator.PositionText
+import androidx.media3.ui.compose.material3.indicator.ProgressSlider
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 
@@ -499,15 +511,22 @@ fun MainScreen(
     } else {
         Scaffold(
             bottomBar = {
-                NavigationBar {
-                    Tab.entries.forEach { t ->
-                        NavigationBarItem(
-                            selected = tab == t,
-                            onClick = { tab = t },
-                            icon = { Icon(t.icon, null) },
-                            label = { Text(stringResource(t.labelRes)) },
-                            modifier = Modifier.dpadFocus()
-                        )
+                Column {
+                    AudioMiniController(
+                        viewModel,
+                        visible = audioOnly && connections > 0 && tab != Tab.OVERVIEW,
+                        onClick = { tab = Tab.OVERVIEW }
+                    )
+                    NavigationBar {
+                        Tab.entries.forEach { t ->
+                            NavigationBarItem(
+                                selected = tab == t,
+                                onClick = { tab = t },
+                                icon = { Icon(t.icon, null) },
+                                label = { Text(stringResource(t.labelRes)) },
+                                modifier = Modifier.dpadFocus()
+                            )
+                        }
                     }
                 }
             }
@@ -800,12 +819,52 @@ private fun FullscreenVideo(
     }
 }
 
+// dacp scanning is press-and-hold: beginff/beginrew while held, playresume on release
 @Composable
+private fun HoldScanButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onBegin: () -> Unit,
+    onEnd: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = {
+                    onBegin()
+                    try {
+                        awaitRelease()
+                    } finally {
+                        onEnd()
+                    }
+                })
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription)
+    }
+}
+
+@Composable
+@AndroidxOptIn(UnstableApi::class)
+private fun AudioMiniController(viewModel: MainViewModel, visible: Boolean, onClick: () -> Unit) {
+    if (!visible) return
+    val player = viewModel.dacpPlayer ?: return
+    val context = LocalContext.current
+    MiniController(
+        player,
+        bitmapLoader = remember { DataSourceBitmapLoader(context) },
+        onClick = onClick
+    )
+}
+
+@Composable
+@AndroidxOptIn(UnstableApi::class)
 private fun NowPlayingContent(viewModel: MainViewModel) {
     val track by viewModel.trackInfo.collectAsState()
-    val positionMs by viewModel.positionMs.collectAsState()
-    val durationMs by viewModel.durationMs.collectAsState()
-    val playing by viewModel.playing.collectAsState()
 
     Column(
         modifier = Modifier
@@ -872,44 +931,57 @@ private fun NowPlayingContent(viewModel: MainViewModel) {
 
         Spacer(Modifier.height(16.dp))
 
-        // progress bar (read-only, seeking not supported by AirPlay receiver)
-        if (durationMs > 0) {
-            LinearProgressIndicator(
-                progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp))
-            )
-            Spacer(Modifier.height(4.dp))
+        val player = viewModel.dacpPlayer
+        if (player != null) {
+            // BottomControls' default row, minus its video-overlay gradient
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                PositionText(player, Modifier.padding(end = 8.dp))
+                Box(modifier = Modifier.weight(1f)) { ProgressSlider(player) }
+                DurationText(player, Modifier.padding(start = 8.dp))
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(formatVideoTime(positionMs), style = MaterialTheme.typography.labelSmall)
-                Text(formatVideoTime(durationMs), style = MaterialTheme.typography.labelSmall)
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        // playback controls
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            IconButton(onClick = { viewModel.dacpPrev() }, modifier = Modifier.dpadFocus()) {
-                Icon(Icons.Default.SkipPrevious, stringResource(R.string.cd_previous), modifier = Modifier.size(36.dp))
-            }
-            FilledIconButton(
-                onClick = { viewModel.dacpPlayPause() },
-                modifier = Modifier.size(56.dp).dpadFocus(CircleShape)
-            ) {
-                Icon(
-                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    stringResource(R.string.cd_play_pause), modifier = Modifier.size(32.dp)
+                HoldScanButton(
+                    icon = Icons.Default.FastRewind,
+                    contentDescription = stringResource(R.string.cd_rewind),
+                    onBegin = { viewModel.audioScanBegin(false) },
+                    onEnd = { viewModel.audioScanEnd() }
+                )
+                PreviousButton(player, modifier = Modifier.dpadFocus())
+                PlayPauseButton(
+                    player,
+                    modifier = Modifier.size(63.dp).dpadFocus(CircleShape),
+                    iconSize = 40.dp
+                )
+                NextButton(player, modifier = Modifier.dpadFocus())
+                HoldScanButton(
+                    icon = Icons.Default.FastForward,
+                    contentDescription = stringResource(R.string.cd_fast_forward),
+                    onBegin = { viewModel.audioScanBegin(true) },
+                    onEnd = { viewModel.audioScanEnd() }
                 )
             }
-            IconButton(onClick = { viewModel.dacpNext() }, modifier = Modifier.dpadFocus()) {
-                Icon(Icons.Default.SkipNext, stringResource(R.string.cd_next), modifier = Modifier.size(36.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                IconButton(onClick = { viewModel.audioVolumeDown() }, modifier = Modifier.dpadFocus()) {
+                    Icon(Icons.AutoMirrored.Rounded.VolumeDown, stringResource(R.string.cd_volume_down))
+                }
+                IconButton(onClick = { viewModel.audioMuteToggle() }, modifier = Modifier.dpadFocus()) {
+                    Icon(Icons.AutoMirrored.Rounded.VolumeOff, stringResource(R.string.cd_mute))
+                }
+                IconButton(onClick = { viewModel.audioVolumeUp() }, modifier = Modifier.dpadFocus()) {
+                    Icon(Icons.AutoMirrored.Rounded.VolumeUp, stringResource(R.string.cd_volume_up))
+                }
             }
         }
     }

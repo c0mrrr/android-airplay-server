@@ -32,9 +32,12 @@
     <string name="cd_fullscreen">Fullscreen</string>
     <string name="cd_exit_fullscreen">Exit fullscreen</string>
     <string name="cd_cover_art">Cover art</string>
-    <string name="cd_previous">Previous</string>
     <string name="cd_play_pause">Play/Pause</string>
-    <string name="cd_next">Next</string>
+    <string name="cd_rewind">Rewind</string>
+    <string name="cd_fast_forward">Fast forward</string>
+    <string name="cd_volume_down">Volume down</string>
+    <string name="cd_volume_up">Volume up</string>
+    <string name="cd_mute">Mute</string>
     <string name="cd_download">Download video</string>
     <string name="cd_cancel_download">Cancel download</string>
 

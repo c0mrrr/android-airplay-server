@@ -8,6 +8,7 @@ import android.view.Surface
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
 import io.github.jqssun.airplay.Prefs
 import io.github.jqssun.airplay.audio.TrackInfo
 import io.github.jqssun.airplay.service.AirPlayService
@@ -57,6 +58,15 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val prefs = app.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
     private val logFile = File(app.filesDir, "airplay_logs.txt")
     private var service: AirPlayService? = null
+    val dacpPlayer: Player? get() = service?.dacpPlayer
+
+    fun audioVolumeUp() { service?.dacpController?.volumeUp() }
+    fun audioVolumeDown() { service?.dacpController?.volumeDown() }
+    fun audioScanBegin(forward: Boolean) {
+        service?.dacpController?.let { if (forward) it.beginFastForward() else it.beginRewind() }
+    }
+    fun audioScanEnd() { service?.dacpController?.playResume() }
+    fun audioMuteToggle() { service?.dacpController?.muteToggle() }
 
     private val _serverState = MutableStateFlow(ServerState.STOPPED)
     val serverState: StateFlow<ServerState> = _serverState.asStateFlow()
@@ -234,14 +244,6 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _trackInfo = MutableStateFlow(TrackInfo())
     val trackInfo: StateFlow<TrackInfo> = _trackInfo.asStateFlow()
 
-    private val _positionMs = MutableStateFlow(0L)
-    val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
-
-    private val _durationMs = MutableStateFlow(0L)
-    val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
-
-    private val _playing = MutableStateFlow(true)
-    val playing: StateFlow<Boolean> = _playing.asStateFlow()
 
     // logs
     private val _logs = MutableStateFlow<List<String>>(emptyList())
@@ -491,11 +493,6 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         showVideoOverlay()
     }
 
-    // dacp controls
-    fun dacpPlayPause() { service?.togglePlayPause() }
-    fun dacpNext() { service?.dacpController?.nextItem() }
-    fun dacpPrev() { service?.dacpController?.prevItem() }
-
     fun dismissPin() {
         _pinCode.value = null
     }
@@ -552,9 +549,6 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
             }
             _mirroringActive.value = it.mirroringActive.value
             _trackInfo.value = it.trackInfo.value
-            _positionMs.value = it.currentPositionMs()
-            _durationMs.value = it.durationMs.value
-            _playing.value = it.playing.value
             if (_debugEnabled.value) {
                 _debugInfo.value = it.collectDebugInfo()
             }
