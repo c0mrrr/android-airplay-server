@@ -342,7 +342,7 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
         val maxFps = prefs.getInt(Prefs.MAX_FPS, Prefs.DEF_MAX_FPS)
         val overscanned = prefs.getBoolean(Prefs.OVERSCANNED, Prefs.DEF_OVERSCANNED)
         val audioLatencyMs = prefs.getInt(Prefs.AUDIO_LATENCY_MS, Prefs.DEF_AUDIO_LATENCY_MS)
-        val h265 = prefs.getBoolean(Prefs.H265_ENABLED, Prefs.DEF_H265_ENABLED)
+        val h265 = prefs.getBoolean(Prefs.H265_ENABLED, Prefs.DEF_H265_ENABLED) && VideoRenderer.supportsH265()
         val alac = prefs.getBoolean(Prefs.ALAC_ENABLED, Prefs.DEF_ALAC_ENABLED)
         val aac = prefs.getBoolean(Prefs.AAC_ENABLED, Prefs.DEF_AAC_ENABLED)
 
@@ -435,7 +435,7 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
             NativeBridge.nativeDestroy(nativeHandle)
             nativeHandle = 0L
         }
-        dacpController?.release()
+        dacpController?.reset()
         nsdManager?.release()
         nsdManager = null
         wakeLock?.release()
@@ -620,6 +620,7 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
             _trackInfo.value = TrackInfo()
             _positionMs.value = 0
             _durationMs.value = 0
+            dacpController?.reset()
             mediaSession?.isActive = false
             _refreshDacpPlayer()
         }
