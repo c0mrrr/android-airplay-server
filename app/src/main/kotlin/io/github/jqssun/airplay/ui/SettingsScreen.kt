@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.jqssun.airplay.Prefs
 import io.github.jqssun.airplay.R
 import io.github.jqssun.airplay.viewmodel.MainViewModel
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import kotlin.math.roundToInt
 
@@ -312,17 +313,17 @@ fun SettingsScreen(viewModel: MainViewModel) {
             )
 
             SettingSwitch(
-                title = stringResource(R.string.setting_low_latency),
-                description = stringResource(R.string.setting_low_latency_desc),
-                checked = lowLatency,
-                onCheckedChange = { viewModel.setLowLatency(it) }
-            )
-
-            SettingSwitch(
                 title = stringResource(R.string.setting_operating_rate_hint),
                 description = stringResource(R.string.setting_operating_rate_hint_desc),
                 checked = operatingRateHint,
                 onCheckedChange = { viewModel.setOperatingRateHint(it) }
+            )
+
+            SettingSwitch(
+                title = stringResource(R.string.setting_low_latency),
+                description = stringResource(R.string.setting_low_latency_desc),
+                checked = lowLatency,
+                onCheckedChange = { viewModel.setLowLatency(it) }
             )
 
             SettingSwitch(
@@ -371,28 +372,23 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 var stepVal by remember(audioAdaptiveStep) { mutableFloatStateOf(audioAdaptiveStep.toFloat()) }
                 ListItem(
                     headlineContent = {
-                        Column {
-                            Slider(
-                                value = stepVal,
-                                onValueChange = { stepVal = it },
-                                onValueChangeFinished = { viewModel.setAudioAdaptiveStep(stepVal.roundToInt()) },
-                                valueRange = 0f..maxStep.toFloat(),
-                                steps = maxStep - 1,
-                                modifier = Modifier.dpadFocus().dpadAdjust(
-                                    onLeft = { viewModel.setAudioAdaptiveStep((audioAdaptiveStep - 1).coerceIn(0, maxStep)) },
-                                    onRight = { viewModel.setAudioAdaptiveStep((audioAdaptiveStep + 1).coerceIn(0, maxStep)) }
-                                )
+                        Slider(
+                            value = stepVal,
+                            onValueChange = { stepVal = it },
+                            onValueChangeFinished = { viewModel.setAudioAdaptiveStep(stepVal.roundToInt()) },
+                            valueRange = 0f..maxStep.toFloat(),
+                            steps = maxStep - 1,
+                            modifier = Modifier.dpadFocus().dpadAdjust(
+                                onLeft = { viewModel.setAudioAdaptiveStep((audioAdaptiveStep - 1).coerceIn(0, maxStep)) },
+                                onRight = { viewModel.setAudioAdaptiveStep((audioAdaptiveStep + 1).coerceIn(0, maxStep)) }
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(stringResource(R.string.audio_adaptive_low_latency),
-                                    style = MaterialTheme.typography.labelSmall)
-                                Text(stringResource(R.string.audio_adaptive_stability),
-                                    style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
+                        )
+                    },
+                    trailingContent = {
+                        val step = stepVal.roundToInt().coerceIn(0, maxStep)
+                        Text(stringResource(R.string.audio_adaptive_value,
+                            Prefs.ADAPTIVE_PERCENTILES[step],
+                            stringArrayResource(R.array.audio_adaptive_step_names)[step]))
                     }
                 )
             } else {

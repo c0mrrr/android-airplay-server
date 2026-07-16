@@ -220,6 +220,11 @@ public:
     // producer: push samples
     void write(const int16_t *pcm, size_t samples, int64_t ptsNs) {
         if (samples == 0) return;
+        // pts 0 = sender clock not NTP synced yet
+        if (ptsNs == 0) {
+            mRing.write(pcm, samples);
+            return;
+        }
         const int64_t durNs = samples * NS_PER_SEC / mChannels / mSampleRate;
 
         // consumer underran since last write: it already played the gap as real-time

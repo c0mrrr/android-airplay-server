@@ -138,12 +138,15 @@ struct AudioEngine {
 
         const int ci = ctIndex(ct);
         const CodecFormat wantConfig = ci >= 0 ? mQueued[ci].load(std::memory_order_acquire) : CodecFormat{};
-        if (ct != mDecoder.ct || wantConfig != mDecoder.format) {
+        // transient codec-service failure does not mute entire session
+        const bool changed = ct != mDecoder.ct || wantConfig != mDecoder.format;
+        if (changed || (!mDecoder.decoder && monoNs() >= mRetryAtNs)) {
             mDecoder = {}; // release old decoder first to free resources
             mDecoder = {ct, wantConfig,
                         makeDecoder(ct, wantConfig.spf, mSampleRate, mChannels, *mTimeline,
                                     mDecLatency, *mLog, mApplied->forceSwAlac,
                                     mApplied->realtimePriority, mApplied->lowLatency)};
+            mRetryAtNs = mDecoder.decoder ? 0 : monoNs() + DECODER_RETRY_NS;
             // codec switch is definitely a discontinuity
             mTimeline->reanchorTracker();
         }
@@ -195,6 +198,8 @@ private:
         std::unique_ptr<Decoder> decoder;
     };
     CreatedDecoder mDecoder;
+    static constexpr int64_t DECODER_RETRY_NS = 1'000'000'000LL;
+    int64_t mRetryAtNs = 0;  // earliest retry of failed decoder
 
     // wanted config per codec, keyed by ctIndex
     static constexpr int NUM_CT = 3;
