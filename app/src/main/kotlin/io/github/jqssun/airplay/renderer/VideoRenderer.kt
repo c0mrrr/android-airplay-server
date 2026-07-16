@@ -181,9 +181,9 @@ class VideoRenderer {
         codec = MediaCodec.createDecoderByType(mime).also {
             it.configure(format, s, null, 0)
             it.start()
+            codecName = (if (h265) "H.265" else "H.264") + " (${it.name})"
         }
-        codecName = if (h265) "H.265" else "H.264"
-        Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight}")
+        Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight} ($codecName)")
     }
 
     private fun stopCodec() {
