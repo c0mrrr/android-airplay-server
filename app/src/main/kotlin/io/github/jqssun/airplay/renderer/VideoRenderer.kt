@@ -15,6 +15,7 @@ class VideoRenderer {
     private var currentH265 = false
     private var videoWidth = 0
     private var videoHeight = 0
+    private var firstFrameQueued = false
 
     // stats
     @Volatile var fps = 0; private set
@@ -115,13 +116,15 @@ class VideoRenderer {
     private fun _feedToCodec(data: ByteArray, ntpTimeNs: Long) {
         val c = codec ?: return
         // dropping a frame desyncs decoder until the next keyframe, but source would only send one on (re)connect
-        repeat(FEED_RETRIES) {
+        val retries = if (firstFrameQueued) FEED_RETRIES else FIRST_FEED_RETRIES
+        repeat(retries) {
             val idx = c.dequeueInputBuffer(FEED_WAIT_US)
             if (idx >= 0) {
                 val buf = c.getInputBuffer(idx) ?: return
                 buf.clear()
                 buf.put(data)
                 c.queueInputBuffer(idx, 0, data.size, ntpTimeNs / 1000, 0)
+                firstFrameQueued = true
                 return
             }
             drainOutput()
@@ -178,12 +181,28 @@ class VideoRenderer {
             format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
         }
 
-        codec = MediaCodec.createDecoderByType(mime).also {
-            it.configure(format, s, null, 0)
-            it.start()
-            codecName = (if (h265) "H.265" else "H.264") + " (${it.name})"
+        firstFrameQueued = false
+        try {
+            _startDecoder(MediaCodec.createDecoderByType(mime), format, s, h265)
+        } catch (e: Exception) {
+            // strict hw decoders reject configs beyond their real limits
+            Log.w(TAG, "Hardware decoder failed, trying software fallback", e)
+            val name = _softwareDecoderName(mime) ?: throw e
+            _startDecoder(MediaCodec.createByCodecName(name), format, s, h265)
         }
         Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight} ($codecName)")
+    }
+
+    private fun _startDecoder(c: MediaCodec, format: MediaFormat, surface: Surface, h265: Boolean) {
+        try {
+            c.configure(format, surface, null, 0)
+            c.start()
+        } catch (e: Exception) {
+            try { c.release() } catch (_: Exception) {}
+            throw e
+        }
+        codec = c
+        codecName = (if (h265) "H.265" else "H.264") + " (${c.name})"
     }
 
     private fun stopCodec() {
@@ -262,6 +281,7 @@ class VideoRenderer {
         private const val BENCH_TAG = "BENCHMARK"
         private const val FEED_WAIT_US = 20_000L
         private const val FEED_RETRIES = 10
+        private const val FIRST_FEED_RETRIES = 50
 
         fun supportsH265(): Boolean {
             val list = MediaCodecList(MediaCodecList.ALL_CODECS)
@@ -271,5 +291,30 @@ class VideoRenderer {
                 }
             }
         }
+
+        // limits of the decoder createDecoderByType would pick
+        fun maxSupportedResolution(h265: Boolean): Pair<Int, Int> {
+            val mime = if (h265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+            try {
+                val caps = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                    .firstOrNull { info ->
+                        !info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) }
+                    }?.getCapabilitiesForType(mime)?.videoCapabilities
+                if (caps != null) return caps.supportedWidths.upper to caps.supportedHeights.upper
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get decoder capabilities", e)
+            }
+            return 1920 to 1080
+        }
+
+        private fun _softwareDecoderName(mime: String): String? =
+            MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.firstOrNull { info ->
+                !info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+                    (if (android.os.Build.VERSION.SDK_INT >= 29) info.isSoftwareOnly
+                    else info.name.lowercase().let {
+                        it.startsWith("omx.google.") || it.startsWith("c2.android.") ||
+                            (!it.startsWith("omx.") && !it.startsWith("c2."))
+                    })
+            }?.name
     }
 }

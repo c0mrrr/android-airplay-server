@@ -27,6 +27,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.jqssun.airplay.Prefs
 import io.github.jqssun.airplay.R
+import io.github.jqssun.airplay.realDisplaySize
 import io.github.jqssun.airplay.viewmodel.MainViewModel
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -40,6 +41,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val alacEnabled by viewModel.alacEnabled.collectAsState()
     val aacEnabled by viewModel.aacEnabled.collectAsState()
     val resolution by viewModel.resolution.collectAsState()
+    val autoRes by viewModel.autoRes.collectAsState()
     val idlePreview by viewModel.idlePreview.collectAsState()
     val autoFullscreen by viewModel.autoFullscreen.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState()
@@ -201,10 +203,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onCheckedChange = { viewModel.setAutoFullscreen(it) }
         )
 
-        SettingResolution(
-            value = resolution,
-            onValueChange = { viewModel.setResolution(it) }
+        val (displayW, displayH) = remember(ctx) { ctx.realDisplaySize() }
+        SettingSwitch(
+            title = stringResource(R.string.setting_auto_res),
+            description = stringResource(R.string.setting_auto_res_desc, "${displayW}x${displayH}"),
+            checked = autoRes,
+            onCheckedChange = { viewModel.setAutoRes(it) }
         )
+
+        if (!autoRes) {
+            SettingResolution(
+                value = resolution,
+                onValueChange = { viewModel.setResolution(it) }
+            )
+        }
 
         SettingChipField(
             title = stringResource(R.string.setting_max_fps),

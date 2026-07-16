@@ -33,6 +33,7 @@ import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import io.github.jqssun.airplay.MainActivity
 import io.github.jqssun.airplay.Prefs
 import io.github.jqssun.airplay.R
+import io.github.jqssun.airplay.realDisplaySize
 import io.github.jqssun.airplay.audio.DacpController
 import io.github.jqssun.airplay.audio.DacpPlayer
 import io.github.jqssun.airplay.audio.DmapParser
@@ -368,14 +369,16 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
         }
 
         // set display params
-        val dm = resources.displayMetrics
         val res = prefs.getString(Prefs.RESOLUTION, Prefs.DEF_RESOLUTION)!!
-        val (w, h) = if (res != "auto" && res.contains("x")) {
-            val parts = res.split("x")
-            parts[0].toInt() to parts[1].toInt()
-        } else {
-            dm.widthPixels to dm.heightPixels
+        val (rawW, rawH) = when {
+            prefs.getBoolean(Prefs.AUTO_RES, Prefs.DEF_AUTO_RES) -> realDisplaySize()
+            res != "auto" && res.contains("x") -> res.split("x").let { it[0].toInt() to it[1].toInt() }
+            else -> resources.displayMetrics.let { it.widthPixels to it.heightPixels }
         }
+        // strict decoders black-screen past their limits; advertised size is only upper bound for senders
+        val (maxW, maxH) = VideoRenderer.maxSupportedResolution(h265)
+        val w = rawW.coerceAtMost(maxW)
+        val h = rawH.coerceAtMost(maxH)
         videoRenderer.setResolution(w, h)
         _videoResolution.value = "${w}x${h}"
         _videoAspect.value = w.toFloat() / h

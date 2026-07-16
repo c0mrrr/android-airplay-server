@@ -149,6 +149,9 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     private val _resolution = MutableStateFlow(prefs.getString(Prefs.RESOLUTION, Prefs.DEF_RESOLUTION)!!)
     val resolution: StateFlow<String> = _resolution.asStateFlow()
 
+    private val _autoRes = MutableStateFlow(prefs.getBoolean(Prefs.AUTO_RES, Prefs.DEF_AUTO_RES))
+    val autoRes: StateFlow<Boolean> = _autoRes.asStateFlow()
+
     private val _maxFps = MutableStateFlow(prefs.getInt(Prefs.MAX_FPS, Prefs.DEF_MAX_FPS))
     val maxFps: StateFlow<Int> = _maxFps.asStateFlow()
 
@@ -392,6 +395,7 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     fun setAlacEnabled(v: Boolean) { _alacEnabled.value = v; prefs.edit().putBoolean(Prefs.ALAC_ENABLED, v).apply(); _applyByServerRestart() }
     fun setAacEnabled(v: Boolean) { _aacEnabled.value = v; prefs.edit().putBoolean(Prefs.AAC_ENABLED, v).apply(); _applyByServerRestart() }
     fun setResolution(v: String) { _resolution.value = v; prefs.edit().putString(Prefs.RESOLUTION, v).apply(); _applyByServerRestart() }
+    fun setAutoRes(v: Boolean) { _autoRes.value = v; prefs.edit().putBoolean(Prefs.AUTO_RES, v).apply(); _applyByServerRestart() }
     fun setMaxFps(v: Int) { _maxFps.value = v; prefs.edit().putInt(Prefs.MAX_FPS, v).apply(); _applyByServerRestart() }
     fun setOverscanned(v: Boolean) { _overscanned.value = v; prefs.edit().putBoolean(Prefs.OVERSCANNED, v).apply(); _applyByServerRestart() }
     fun setRequirePin(v: Boolean) { _requirePin.value = v; prefs.edit().putBoolean(Prefs.REQUIRE_PIN, v).apply(); _applyByServerRestart() }
