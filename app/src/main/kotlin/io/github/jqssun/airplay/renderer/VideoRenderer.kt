@@ -41,6 +41,7 @@ class VideoRenderer {
     // anchors that map decoder PTS (us) to System.nanoTime() for scheduled rendering
     private var _ptsBaseUs = Long.MIN_VALUE
     private var _wallBaseNs = 0L
+    private var firstFrameDecoded = false
 
     fun setResolution(w: Int, h: Int) {
         videoWidth = w
@@ -114,13 +115,15 @@ class VideoRenderer {
     private fun _feedToCodec(data: ByteArray, ntpTimeNs: Long) {
         val c = codec ?: return
         // dropping a frame desyncs decoder until the next keyframe, but source would only send one on (re)connect
-        repeat(FEED_RETRIES) {
+        val retries = if (!firstFrameDecoded) 50 else FEED_RETRIES
+        repeat(retries) {
             val idx = c.dequeueInputBuffer(FEED_WAIT_US)
             if (idx >= 0) {
                 val buf = c.getInputBuffer(idx) ?: return
                 buf.clear()
                 buf.put(data)
                 c.queueInputBuffer(idx, 0, data.size, ntpTimeNs / 1000, 0)
+                firstFrameDecoded = true
                 return
             }
             drainOutput()
@@ -174,12 +177,37 @@ class VideoRenderer {
             format.setInteger(MediaFormat.KEY_ALLOW_FRAME_DROP, if (keyAllowFrameDrop) 1 else 0)
         }
 
-        codec = MediaCodec.createDecoderByType(mime).also {
-            it.configure(format, s, null, 0)
-            it.start()
+        firstFrameDecoded = false
+        try {
+            codec = MediaCodec.createDecoderByType(mime).also {
+                it.configure(format, s, null, 0)
+                it.start()
+                codecName = if (h265) "H.265 (${it.name})" else "H.264 (${it.name})"
+            }
+            Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight} (${codec?.name})")
+        } catch (e: Exception) {
+            Log.w(TAG, "Hardware decoder failed, trying software fallback", e)
+            val list = MediaCodecList(MediaCodecList.ALL_CODECS)
+            val swCodec = list.codecInfos.firstOrNull { info ->
+                !info.isEncoder && info.supportedTypes.any { it.equals(mime, true) } &&
+                (if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    info.isSoftwareOnly
+                } else {
+                    val name = info.name.lowercase()
+                    name.startsWith("omx.google.") || name.startsWith("c2.android.") || (!name.startsWith("omx.") && !name.startsWith("c2."))
+                })
+            }
+            if (swCodec != null) {
+                codec = MediaCodec.createByCodecName(swCodec.name).also {
+                    it.configure(format, s, null, 0)
+                    it.start()
+                    codecName = if (h265) "H.265 (${it.name})" else "H.264 (${it.name})"
+                }
+                Log.i(TAG, "Fallback video codec started: $mime ${videoWidth}x${videoHeight} (${codec?.name})")
+            } else {
+                throw e
+            }
         }
-        codecName = if (h265) "H.265" else "H.264"
-        Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight}")
     }
 
     private fun stopCodec() {
@@ -266,6 +294,26 @@ class VideoRenderer {
                     it.equals(MediaFormat.MIMETYPE_VIDEO_HEVC, ignoreCase = true)
                 }
             }
+        }
+
+        fun getMaxSupportedResolution(h265: Boolean): Pair<Int, Int> {
+            val mime = if (h265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+            try {
+                val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+                for (info in list.codecInfos) {
+                    if (info.isEncoder) continue
+                    if (info.supportedTypes.any { it.equals(mime, true) }) {
+                        val caps = info.getCapabilitiesForType(mime)
+                        val videoCaps = caps.videoCapabilities
+                        if (videoCaps != null) {
+                            return videoCaps.supportedWidths.upper to videoCaps.supportedHeights.upper
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get decoder capabilities", e)
+            }
+            return 1920 to 1080
         }
     }
 }

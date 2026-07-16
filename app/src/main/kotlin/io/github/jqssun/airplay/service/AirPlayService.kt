@@ -339,13 +339,33 @@ class AirPlayService : Service(), RaopCallbackHandler {
         }
 
         // set display params
-        val dm = resources.displayMetrics
+        val autoRes = prefs.getBoolean(Prefs.AUTO_RES, Prefs.DEF_AUTO_RES)
         val res = prefs.getString(Prefs.RESOLUTION, Prefs.DEF_RESOLUTION)!!
-        val (w, h) = if (res != "auto" && res.contains("x")) {
+        
+        var (w, h) = if (autoRes) {
+            val wm = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+            val metrics = android.util.DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            metrics.widthPixels to metrics.heightPixels
+        } else if (res != "auto" && res.contains("x")) {
             val parts = res.split("x")
             parts[0].toInt() to parts[1].toInt()
         } else {
+            val dm = resources.displayMetrics
             dm.widthPixels to dm.heightPixels
+        }
+        
+        // Cap resolution to the maximum supported by the device's decoder
+        val (maxW, maxH) = VideoRenderer.getMaxSupportedResolution(h265)
+        if (w > maxW) {
+            val ratio = maxW.toFloat() / w
+            w = maxW
+            h = (h * ratio).toInt()
+        }
+        if (h > maxH) {
+            val ratio = maxH.toFloat() / h
+            h = maxH
+            w = (w * ratio).toInt()
         }
         videoRenderer.setResolution(w, h)
         _videoResolution.value = "${w}x${h}"

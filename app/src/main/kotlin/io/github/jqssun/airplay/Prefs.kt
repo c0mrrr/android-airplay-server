@@ -22,6 +22,7 @@ object Prefs {
     const val SW_ALAC_ENABLED = "sw_alac_enabled"; const val DEF_SW_ALAC_ENABLED = true
     const val AAC_ENABLED = "aac_enabled"; const val DEF_AAC_ENABLED = true
     const val RESOLUTION = "resolution"; const val DEF_RESOLUTION = "auto"
+    const val AUTO_RES = "auto_res"; const val DEF_AUTO_RES = false
     const val MAX_FPS = "max_fps"; const val DEF_MAX_FPS = 60
     const val OVERSCANNED = "overscanned"; const val DEF_OVERSCANNED = false
     const val REQUIRE_PIN = "require_pin"; const val DEF_REQUIRE_PIN = false

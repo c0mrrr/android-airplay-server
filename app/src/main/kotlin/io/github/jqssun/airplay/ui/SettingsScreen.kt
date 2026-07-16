@@ -43,6 +43,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val keepScreenOn by viewModel.keepScreenOn.collectAsState()
     val advertiseVideo by viewModel.advertiseVideo.collectAsState()
     val advertiseAudio by viewModel.advertiseAudio.collectAsState()
+    val autoRes by viewModel.autoRes.collectAsState()
     val launchOnConnect by viewModel.launchOnConnect.collectAsState()
     val maxFps by viewModel.maxFps.collectAsState()
     val overscanned by viewModel.overscanned.collectAsState()
@@ -195,10 +196,27 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onCheckedChange = { viewModel.setAutoFullscreen(it) }
         )
 
-        SettingResolution(
-            value = resolution,
-            onValueChange = { viewModel.setResolution(it) }
+        val context = LocalContext.current
+        val realMetrics = remember(context) {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val metrics = android.util.DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            metrics
+        }
+        
+        SettingSwitch(
+            title = "Auto Resolution",
+            description = "Force use of real screen resolution instead of falling back to 1080p. Current detected resolution: ${realMetrics.widthPixels}x${realMetrics.heightPixels}",
+            checked = autoRes,
+            onCheckedChange = { viewModel.setAutoRes(it) }
         )
+
+        if (!autoRes) {
+            SettingResolution(
+                value = resolution,
+                onValueChange = { viewModel.setResolution(it) }
+            )
+        }
 
         SettingChipField(
             title = stringResource(R.string.setting_max_fps),
