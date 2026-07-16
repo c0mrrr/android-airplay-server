@@ -4,13 +4,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -26,6 +27,8 @@ import android.view.Surface
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import io.github.jqssun.airplay.MainActivity
 import io.github.jqssun.airplay.Prefs
@@ -34,6 +37,7 @@ import io.github.jqssun.airplay.audio.DacpController
 import io.github.jqssun.airplay.audio.DacpPlayer
 import io.github.jqssun.airplay.audio.DmapParser
 import io.github.jqssun.airplay.audio.TrackInfo
+import io.github.jqssun.airplay.bridge.LogListener
 import io.github.jqssun.airplay.bridge.NativeBridge
 import io.github.jqssun.airplay.bridge.RaopCallbackHandler
 import io.github.jqssun.airplay.discovery.NsdServiceManager
@@ -46,6 +50,8 @@ import java.net.NetworkInterface
 import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
 
 data class VideoPlaybackInfo(
     val positionMs: Long = 0,
@@ -56,7 +62,7 @@ data class VideoPlaybackInfo(
     val buffering: Boolean = false,
 )
 
-class AirPlayService : Service(), RaopCallbackHandler {
+class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
 
     private var nativeHandle = 0L
     private var nsdManager: NsdServiceManager? = null
@@ -72,6 +78,9 @@ class AirPlayService : Service(), RaopCallbackHandler {
     private val _videoLocation = MutableStateFlow<String?>(null)
     val videoLocation = _videoLocation.asStateFlow()
 
+    private val prefs: SharedPreferences by lazy {
+        getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
+    }
     private val _serverState = MutableStateFlow(ServerState.STOPPED)
     val serverState = _serverState.asStateFlow()
 
@@ -166,12 +175,19 @@ class AirPlayService : Service(), RaopCallbackHandler {
         logCallback?.invoke(msg)
     }
 
+    override fun onLog(msg: String) {
+        logCallback?.invoke(msg)
+    }
+
     inner class LocalBinder : Binder() {
         val service: AirPlayService
             get() = this@AirPlayService
     }
 
-    override fun onBind(intent: Intent?): IBinder = LocalBinder()
+    override fun onBind(intent: Intent): IBinder {
+        super.onBind(intent)
+        return LocalBinder()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -268,12 +284,16 @@ class AirPlayService : Service(), RaopCallbackHandler {
                 )
             }
         }
+        lifecycleScope.launch {
+            prefs.audioConfigFlow()
+                .debounce(AUDIO_CONFIG_DEBOUNCE_MS)
+                .collect { audioRenderer.updateConfig(it) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START_SERVER) {
             promoteToForeground()
-            val prefs = getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
             val name = prefs.getString(Prefs.SERVER_NAME, Prefs.DEF_SERVER_NAME) ?: Prefs.DEF_SERVER_NAME
             startServer(name, ensureServiceStarted = false)
             if (_serverState.value != ServerState.RUNNING) stopSelf(startId)
@@ -289,7 +309,6 @@ class AirPlayService : Service(), RaopCallbackHandler {
         if (_serverState.value == ServerState.RUNNING) return
         val effectiveName = name.ifBlank { Prefs.DEF_SERVER_NAME }
 
-        val prefs = getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "airplay:server").apply { acquire() }
 
@@ -300,12 +319,22 @@ class AirPlayService : Service(), RaopCallbackHandler {
         val nohold = prefs.getBoolean(Prefs.ALLOW_NEW_CONN, Prefs.DEF_ALLOW_NEW_CONN)
         val requirePin = prefs.getBoolean(Prefs.REQUIRE_PIN, Prefs.DEF_REQUIRE_PIN)
 
+        // oboe's OpenSL ES backend (pre-AAudio devices, API < 27) can't discover native
+        // rate / burst size itself; feed it AudioManager values so low-latency buffer
+        // sizing works there
+        // see: https://github.com/google/oboe/blob/main/docs/GettingStarted.md#obtaining-optimal-latency
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        NativeBridge.nativeSetDefaultStreamValues(
+            am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 0,
+            am.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull() ?: 0
+        )
         nativeHandle = NativeBridge.nativeInit(this, hwAddr, effectiveName, keyFile, nohold, requirePin)
         if (nativeHandle == 0L) {
             log("Native init failed")
             _failStart()
             return
         }
+        audioRenderer.attachEngine(nativeHandle)
 
         // apply settings from preferences
         val maxFps = prefs.getInt(Prefs.MAX_FPS, Prefs.DEF_MAX_FPS)
@@ -315,17 +344,16 @@ class AirPlayService : Service(), RaopCallbackHandler {
         val alac = prefs.getBoolean(Prefs.ALAC_ENABLED, Prefs.DEF_ALAC_ENABLED)
         val aac = prefs.getBoolean(Prefs.AAC_ENABLED, Prefs.DEF_AAC_ENABLED)
 
-        audioRenderer.swAlacEnabled = prefs.getBoolean(Prefs.SW_ALAC_ENABLED, Prefs.DEF_SW_ALAC_ENABLED)
-        audioRenderer.audioBufferMultiplier = prefs.getInt(Prefs.AUDIO_BUFFER_MULTIPLIER, Prefs.DEF_AUDIO_BUFFER_MULTIPLIER)
+        val realtimePriority = prefs.getBoolean(Prefs.KEY_PRIORITY, Prefs.DEF_KEY_PRIORITY)
+        val lowLatency = prefs.getBoolean(Prefs.LOW_LATENCY, Prefs.DEF_LOW_LATENCY)
         videoRenderer.enforceSdr = prefs.getBoolean(Prefs.ENFORCE_SDR, Prefs.DEF_ENFORCE_SDR)
         videoRenderer.keyAllowFrameDrop = prefs.getBoolean(Prefs.KEY_ALLOW_FRAME_DROP, Prefs.DEF_KEY_ALLOW_FRAME_DROP)
-        val realtimePriority = prefs.getBoolean(Prefs.KEY_PRIORITY, Prefs.DEF_KEY_PRIORITY)
         videoRenderer.realtimeDecoderPriority = realtimePriority
+        videoRenderer.lowLatency = lowLatency
         videoRenderer.operatingRateHint = prefs.getBoolean(Prefs.KEY_OPERATING_RATE, Prefs.DEF_KEY_OPERATING_RATE)
         videoRenderer.benchmarkLog = prefs.getBoolean(Prefs.BENCHMARK_LOG, Prefs.DEF_BENCHMARK_LOG)
         videoRenderer.benchmarkLogCallback = { msg -> logCallback?.invoke(msg) }
         videoRenderer.scheduledOutputBufferRelease = prefs.getBoolean(Prefs.SCHEDULED_OUTPUT_BUFFER_RELEASE, Prefs.DEF_SCHEDULED_OUTPUT_BUFFER_RELEASE)
-        audioRenderer.realtimeDecoderPriority = realtimePriority
         NativeBridge.nativeSetH265Enabled(nativeHandle, h265)
         NativeBridge.nativeSetCodecs(nativeHandle, alac, aac)
         val advertiseVideo = prefs.getBoolean(Prefs.ADVERTISE_VIDEO, Prefs.DEF_ADVERTISE_VIDEO)
@@ -380,6 +408,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     private fun _failStart() {
+        audioRenderer.detachEngine()
         if (nativeHandle != 0L) {
             NativeBridge.nativeDestroy(nativeHandle)
             nativeHandle = 0L
@@ -396,6 +425,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     fun stopServer() {
+        audioRenderer.detachEngine()
         if (nativeHandle != 0L) {
             NativeBridge.nativeStop(nativeHandle)
             NativeBridge.nativeDestroy(nativeHandle)
@@ -407,7 +437,6 @@ class AirPlayService : Service(), RaopCallbackHandler {
         wakeLock?.release()
         wakeLock = null
         videoRenderer.release()
-        audioRenderer.release()
         airPlayVideoPlayer.stop()
         mediaSession?.isActive = false
         _audioOnly.value = false
@@ -505,10 +534,6 @@ class AirPlayService : Service(), RaopCallbackHandler {
         videoRenderer.feedFrame(data, ntpTimeNs, isH265)
     }
 
-    override fun onAudioData(data: ByteArray, ct: Int, ntpTimeNs: Long, seqNum: Int) {
-        audioRenderer.feedAudio(data, ct, ntpTimeNs)
-    }
-
     override fun onVideoSessionPoll() {
         _lastVideoPollAt = SystemClock.elapsedRealtime()
     }
@@ -540,6 +565,8 @@ class AirPlayService : Service(), RaopCallbackHandler {
 
     override fun onAudioFormat(ct: Int, spf: Int, usingScreen: Boolean) {
         clearPin()
+        audioRenderer.start()
+        audioRenderer.setFormat(ct, spf)
         if (!usingScreen && !_audioOnly.value) {
             // pure music streaming (not screen mirroring audio)
             onAudioOnly(true)
@@ -579,6 +606,8 @@ class AirPlayService : Service(), RaopCallbackHandler {
         if (_connectionCount.value == 0) {
             // clients may drop without POST /stop; must run before the poll-state reset
             _endVideoPlayback("AirPlay Video stopped (disconnect)")
+            // last client gone: release audio output devices to save power
+            audioRenderer.stop()
             _audioOnly.value = false
             _mirroringActive.value = false
             _lastVideoPollAt = 0
@@ -588,14 +617,12 @@ class AirPlayService : Service(), RaopCallbackHandler {
             _positionMs.value = 0
             _durationMs.value = 0
             mediaSession?.isActive = false
-            audioRenderer.markSessionEnded()
             _refreshDacpPlayer()
         }
         log("Client disconnected (${_connectionCount.value})")
     }
 
     override fun onConnectionReset(reason: Int) {
-        audioRenderer.markSessionEnded()
         log("Connection reset: $reason")
     }
 
@@ -772,6 +799,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
         framePacingJitterUs = videoRenderer.framePacingJitterUs,
         audioCodec = audioRenderer.codecLabel,
         audioVolume = (audioRenderer.volume * 100).toInt(),
+        audio = audioRenderer.audioDebug(),
         connections = _connectionCount.value,
     )
 
@@ -818,12 +846,10 @@ class AirPlayService : Service(), RaopCallbackHandler {
     }
 
     private fun requiresPin(): Boolean {
-        val prefs = getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
         return prefs.getBoolean(Prefs.REQUIRE_PIN, Prefs.DEF_REQUIRE_PIN)
     }
 
     private fun shouldLaunchOnConnect(): Boolean {
-        val prefs = getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
         return prefs.getBoolean(Prefs.LAUNCH_ON_CONNECT, Prefs.DEF_LAUNCH_ON_CONNECT)
     }
 
@@ -910,5 +936,7 @@ class AirPlayService : Service(), RaopCallbackHandler {
         // shared with dpad/double-tap seeks
         const val VIDEO_SEEK_STEP_MS = 10_000L
         const val VIDEO_POLL_PENDING_TIMEOUT_MS = 3_000L
+
+        private const val AUDIO_CONFIG_DEBOUNCE_MS = 500L
     }
 }

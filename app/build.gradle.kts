@@ -77,6 +77,7 @@ android {
 
     buildFeatures {
         compose = true
+        prefab = true
     }
 }
 
@@ -110,6 +111,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.datastore.prefs)
     implementation(libs.androidx.media)
@@ -118,6 +120,7 @@ dependencies {
     implementation(libs.media3.ui.compose.material3)
     implementation(libs.media3.transformer)
     implementation(libs.kotlinx.coroutines)
+    implementation(libs.oboe)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

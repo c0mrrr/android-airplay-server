@@ -16,10 +16,18 @@ object Prefs {
     val KEY_ALLOW_FRAME_DROP: String = MediaFormat.KEY_ALLOW_FRAME_DROP; const val DEF_KEY_ALLOW_FRAME_DROP = true
     val KEY_PRIORITY: String = MediaFormat.KEY_PRIORITY; const val DEF_KEY_PRIORITY = true
     val KEY_OPERATING_RATE: String = MediaFormat.KEY_OPERATING_RATE; const val DEF_KEY_OPERATING_RATE = true
+    const val LOW_LATENCY = "low_latency"; const val DEF_LOW_LATENCY = true
     const val SCHEDULED_OUTPUT_BUFFER_RELEASE = "scheduled_output_buffer_release"; const val DEF_SCHEDULED_OUTPUT_BUFFER_RELEASE = false
-    const val AUDIO_BUFFER_MULTIPLIER = "audio_buffer_multiplier"; const val DEF_AUDIO_BUFFER_MULTIPLIER = 4
+    const val AUDIO_AUTO_BUFFER = "audio_auto_buffer"; const val DEF_AUDIO_AUTO_BUFFER = true
+    // fixed cushion ms, used only when AUDIO_AUTO_BUFFER is off
+    const val AUDIO_CUSHION_MS = "audio_cushion_ms"; const val DEF_AUDIO_CUSHION_MS = 40
+    // slider step 0..4 mapping to arrival-delay percentile the cushion targets;
+    // lower = less latency, higher = more stable
+    const val AUDIO_ADAPTIVE_STEP = "audio_adaptive_step"; const val DEF_AUDIO_ADAPTIVE_STEP = 3
+    val ADAPTIVE_PERCENTILES = intArrayOf(80, 85, 90, 95, 99)
+    const val OBOE_BUFFER_FRAMES = "oboe_buffer_frames"; const val DEF_OBOE_BUFFER_FRAMES = 0
     const val ALAC_ENABLED = "alac_enabled"; const val DEF_ALAC_ENABLED = false
-    const val SW_ALAC_ENABLED = "sw_alac_enabled"; const val DEF_SW_ALAC_ENABLED = true
+    const val FORCE_SW_ALAC = "force_sw_alac"; const val DEF_FORCE_SW_ALAC = false
     const val AAC_ENABLED = "aac_enabled"; const val DEF_AAC_ENABLED = true
     const val RESOLUTION = "resolution"; const val DEF_RESOLUTION = "auto"
     const val MAX_FPS = "max_fps"; const val DEF_MAX_FPS = 60

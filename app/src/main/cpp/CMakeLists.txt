@@ -20,6 +20,9 @@ set(FORWARD_ANDROID_NDK_ROOT "${ANDROID_NDK}" CACHE STRING "" FORCE) # CI
 list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 add_subdirectory(third_party/openssl-cmake)
 
+# ---------- Oboe (low-latency audio output, via prefab AAR) ----------
+find_package(oboe REQUIRED CONFIG)
+
 # ---------- libplist (built from submodule source) ----------
 set(PLIST_SRC third_party/libplist/src)
 set(PLIST_CNARY third_party/libplist/libcnary)
@@ -110,6 +113,7 @@ set(BRIDGE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/android_dnssd_shim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/android_raop_callbacks.c
     ${CMAKE_CURRENT_SOURCE_DIR}/native_bridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/audio_engine.cpp
 )
 
 # ---------- Final shared library ----------
@@ -139,6 +143,8 @@ target_link_libraries(airplay_native
     playfair
     crypto
     plist
+    oboe::oboe
+    mediandk
     log
     android
 )

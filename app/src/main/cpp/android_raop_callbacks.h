@@ -4,6 +4,7 @@
 #include <jni.h>
 #include <pthread.h>
 #include "raop.h"
+#include "audio_engine.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,7 +15,6 @@ typedef struct {
     jobject callback_obj;
     raop_t *raop;
     jmethodID on_video_data;
-    jmethodID on_audio_data;
     jmethodID on_audio_format;
     jmethodID on_video_size;
     jmethodID on_volume_change;
@@ -46,6 +46,7 @@ typedef struct {
        establish their timeline after the real duration is known, not at duration 0 */
     pthread_cond_t play_ready_cond;
     int play_ready;
+    AudioEngine *audio_engine;
 } android_callback_ctx_t;
 
 void android_callbacks_init(android_callback_ctx_t *ctx, JNIEnv *env, jobject callback_obj);

@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <android/log.h>
 #include "android_raop_callbacks.h"
+#include "audio_engine.h"
 
 #define TAG "AirPlayNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -23,6 +24,7 @@ static JNIEnv *_get_env(android_callback_ctx_t *ctx) {
     /* Clear any pending exception from a previous callback on this thread,
        otherwise JNI calls like NewByteArray will fatally abort. */
     if (env && (*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
     }
     return env;
@@ -34,6 +36,7 @@ void android_callbacks_init(android_callback_ctx_t *ctx, JNIEnv *env, jobject ca
     ctx->h265_enabled = 1;
     ctx->require_pin = 0;
     ctx->registered_count = 0;
+    ctx->audio_engine = NULL;
     memset(ctx->registered_keys, 0, sizeof(ctx->registered_keys));
 
     pthread_mutex_init(&ctx->playback_info_lock, NULL);
@@ -47,7 +50,6 @@ void android_callbacks_init(android_callback_ctx_t *ctx, JNIEnv *env, jobject ca
 
     jclass cls = (*env)->GetObjectClass(env, callback_obj);
     ctx->on_video_data = (*env)->GetMethodID(env, cls, "onVideoData", "([BJZ)V");
-    ctx->on_audio_data = (*env)->GetMethodID(env, cls, "onAudioData", "([BIJI)V");
     ctx->on_audio_format = (*env)->GetMethodID(env, cls, "onAudioFormat", "(IIZ)V");
     ctx->on_video_size = (*env)->GetMethodID(env, cls, "onVideoSize", "(FFFF)V");
     ctx->on_volume_change = (*env)->GetMethodID(env, cls, "onVolumeChange", "(F)V");
@@ -100,14 +102,9 @@ void android_callbacks_update_playback_info(android_callback_ctx_t *ctx, double 
 
 static void _audio_process(void *cls, raop_ntp_t *ntp, audio_decode_struct *data) {
     android_callback_ctx_t *ctx = (android_callback_ctx_t *)cls;
-    JNIEnv *env = _get_env(ctx);
-    if (!env || !data->data || data->data_len <= 0) return;
-
-    jbyteArray arr = (*env)->NewByteArray(env, data->data_len);
-    (*env)->SetByteArrayRegion(env, arr, 0, data->data_len, (jbyte *)data->data);
-    (*env)->CallVoidMethod(env, ctx->callback_obj, ctx->on_audio_data,
-                           arr, (jint)data->ct, (jlong)data->ntp_time_local, (jint)data->seqnum);
-    (*env)->DeleteLocalRef(env, arr);
+    if (!ctx->audio_engine || !data->data || data->data_len <= 0) return;
+    audio_engine_decode(ctx->audio_engine, data->data, data->data_len,
+                        (int)data->ct, (int64_t)data->ntp_time_local);
 }
 
 static void _video_process(void *cls, raop_ntp_t *ntp, video_decode_struct *data) {

@@ -27,6 +27,7 @@ class VideoRenderer {
     var enforceSdr = true
     var keyAllowFrameDrop = true
     var realtimeDecoderPriority = true
+    var lowLatency = true
     var operatingRateHint = false
     var scheduledOutputBufferRelease = true
     var benchmarkLog = false
@@ -172,6 +173,9 @@ class VideoRenderer {
         }
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             format.setInteger(MediaFormat.KEY_ALLOW_FRAME_DROP, if (keyAllowFrameDrop) 1 else 0)
+        }
+        if (lowLatency && android.os.Build.VERSION.SDK_INT >= 30) {
+            format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
         }
 
         codec = MediaCodec.createDecoderByType(mime).also {

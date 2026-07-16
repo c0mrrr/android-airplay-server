@@ -33,9 +33,15 @@ object NativeBridge {
     external fun nativeGetRaopServiceName(handle: Long): String?
     external fun nativeGetServerName(handle: Long): String?
 
-    // software alac decoder
-    external fun nativeAlacInit(frameLength: Int, numChannels: Int, bitDepth: Int,
-                                pb: Int, mb: Int, kb: Int): Long
-    external fun nativeAlacDecode(handle: Long, input: ByteArray): ByteArray?
-    external fun nativeAlacDestroy(handle: Long)
+    external fun nativeSetDefaultStreamValues(sampleRate: Int, framesPerBurst: Int)
+    external fun nativeServerAudioConfigure(handle: Long, cushionMs: Int, percentilePct: Int,
+                                            oboeBufferFrames: Int, forceSwAlac: Boolean,
+                                            realtimePriority: Boolean, lowLatency: Boolean,
+                                            benchmarkLog: Boolean): Boolean
+    external fun nativeServerAudioStart(handle: Long): Boolean
+    external fun nativeServerAudioStop(handle: Long)
+    external fun nativeServerAudioSetVolume(handle: Long, volume: Float)
+    external fun nativeServerAudioFormat(handle: Long, ct: Int, spf: Int)
+    // fills direct buffer with packed debug snapshot; false if audio isn't running
+    external fun nativeServerAudioDebug(handle: Long, buf: java.nio.ByteBuffer): Boolean
 }
